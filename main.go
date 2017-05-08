@@ -17,6 +17,10 @@ import (
 )
 
 var (
+	build string
+)
+
+var (
 	stdout = log.New(os.Stdout, "", 0)
 	stderr = log.New(os.Stderr, "", 0)
 )
@@ -165,6 +169,7 @@ func extract() error {
 }
 
 func main() {
+	kingpin.Version(build)
 	kingpin.Parse()
 
 	if err := extract(); err != nil {
