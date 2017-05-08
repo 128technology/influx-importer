@@ -1,0 +1,18 @@
+hash: f5acc49b354cf97a8c6ee28f1285d890d174d59cb25b9c765d86d0c5ab9a21ec
+updated: 2017-05-04T16:44:59.424780184-04:00
+imports:
+- name: github.com/alecthomas/template
+  version: a0175ee3bccc567396460bf5acd36800cb10c49c
+  subpackages:
+  - parse
+- name: github.com/alecthomas/units
+  version: 2efee857e7cfd4f3d0138cc3cbb1b4966962b93a
+- name: github.com/influxdata/influxdb
+  version: 23af70add4a53f38584959747cf0df4168d86014
+  subpackages:
+  - client/v2
+- name: github.com/jeffail/tunny
+  version: 54ae6b3774037722ea5cc04b6af6e971b6221fbf
+- name: gopkg.in/alecthomas/kingpin.v2
+  version: 7f0871f2e17818990e4eed73f9b5c2f429501228
+devImports: []

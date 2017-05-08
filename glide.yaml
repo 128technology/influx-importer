@@ -1,0 +1,7 @@
+package: 128-export
+import:
+- package: github.com/influxdata/influxdb
+  subpackages:
+  - client/v2
+- package: gopkg.in/alecthomas/kingpin.v2
+- package: github.com/jeffail/tunny
