@@ -1,7 +1,8 @@
 language: go
-
 go:
-  - 1.8
-
-after_success:
-  test -n "$TRAVIS_TAG" && curl -sL https://git.io/goreleaser | bash
+- 1.8
+scripts: go test
+after_success: test -n "$TRAVIS_TAG" && curl -sL https://git.io/goreleaser | bash
+env:
+  global:
+    secure: Ngv87SquOAJTigBYKINGREnBh0wDN04sS3O7rlCRyhRk8oDSsLK3BcB7CswEBDfCpFp2FWEpQp7TUByToxeX6/wrAMoFCgxW0fXuKSIY1GIqWyisdVfhi0AIiXLz2MpkF1IiVpWVi1R0XXA0vmXplGrq3rAOwPB+kZcGQkv6nTl8xozz2djHl0pknaPUWz72X4f1HmbxKRZTISOHtDgerqws+IJHgW3Txs6pd4vWfu8K1fJ3XEsdEiTfwz0P51xiggVdrAwUpBWkfWX6yiX1fC1ViJj6D2ZB6PcjH50jqHCqO/6+x1PfHcwkAm1rpAkYaRTuBRUfwq40TF04sFrfhDU2YFw1IVkl9dVvW1p176/LpoZKhifS7q/bTEOmoeJmEX2e6QYH0OVG3tuS0IQyAxKsKDP2vskoyLz8OTZ8OYwA5QzfYENsE8hBe89b9vv3FJDxOW7LYEEEY3gNBbzsq/FNiVFnNeVkFWIjVu7KydnTdpLQitIt8tm4gazcl3rXEPSwSgGrmmB0xcjZ6RVIAtsbbZSqj1P/NC+519cGib97yRsQzQwyuij5TdruifwA5tqXq+t/pO0Rm36KDYYrJ7SZtFyIILGfNSnkUA8fpGAphiO3NyS++M2KhtoiJhkSz6WtyazGcvhMzY+5KjsrgB/XJcuB7G+zQbfsDVvkeho=

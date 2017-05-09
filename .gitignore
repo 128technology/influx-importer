@@ -3,8 +3,6 @@
 *.a
 *.so
 
-**/.git
-
 # Folders
 _obj
 _test
@@ -26,9 +24,11 @@ _testmain.go
 *.test
 *.prof
 
-# Output
-bin/
 dist/
+bin/
+
+# Output
+influx-importer
 
 # IDEs
 .vscode

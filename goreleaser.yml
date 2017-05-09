@@ -11,6 +11,4 @@ archive:
   replacements:
     amd64: 64-bit
     darwin: macOS
-    linux: Tux
-  files:
-    - drum-roll.licence.txt
+    linux: linux
