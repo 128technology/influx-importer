@@ -1,4 +1,5 @@
 build:
+  main: ./cmd/main.go
   binary: influx-importer
   goos:
     - darwin
@@ -8,7 +9,3 @@ build:
   ldflags: -s -w -X main.build={{.Version}}
 archive:
   format: tar.gz
-  replacements:
-    amd64: 64-bit
-    darwin: macOS
-    linux: linux

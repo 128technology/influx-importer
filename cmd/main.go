@@ -6,19 +6,19 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"strconv"
-
 	"github.com/jeffail/tunny"
+
+	t128 "github.com/128technology/influx-importer/client"
+	influx "github.com/128technology/influx-importer/influx"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
 
-var (
-	build string
-)
+var build = "development"
 
 var (
 	stdout = log.New(os.Stdout, "", 0)
@@ -30,21 +30,12 @@ var (
 	url            = kingpin.Flag("url", "The url URL.").Short('u').Required().String()
 	workers        = kingpin.Flag("workers", "The number of works to process data.").Short('w').Default("2").Int()
 	influxAddress  = kingpin.Flag("influx-address", "The HTTP address of the influx instance.").Required().String()
-	influxUser     = kingpin.Flag("influx-user", "The username for the influx instance.").OverrideDefaultFromEnvar("INFLUX_USER").String()
-	influxPass     = kingpin.Flag("influx-pass", "The password for the influx instance.").OverrideDefaultFromEnvar("INFLUX_PASS").String()
+	influxUser     = kingpin.Flag("influx-user", "The username for the influx instance.").Default("").OverrideDefaultFromEnvar("INFLUX_USER").String()
+	influxPass     = kingpin.Flag("influx-pass", "The password for the influx instance.").Default("").OverrideDefaultFromEnvar("INFLUX_PASS").String()
 	influxDatabase = kingpin.Flag("influx-database", "The influx database to store analytics.").Required().String()
 )
 
-var httpClient = &http.Client{
-	Timeout: 30 * time.Second,
-	Transport: &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
-	},
-}
-
-func parametersToString(parameters []analyticParameter) string {
+func parametersToString(parameters []t128.AnalyticParameter) string {
 	var str []string
 	for _, param := range parameters {
 		str = append(str, fmt.Sprintf("%v=%v", param.Name, param.Value))
@@ -53,8 +44,22 @@ func parametersToString(parameters []analyticParameter) string {
 }
 
 func extract() error {
-	client := createClient(*url, *token, httpClient)
-	window := analyticWindow{End: "now", Start: "now-3600"}
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
+
+	client := t128.CreateClient(*url, *token, httpClient)
+	window := t128.AnalyticWindow{End: "now", Start: "now-3600"}
+
+	influxClient, err := influx.CreateClient(*influxAddress, *influxDatabase, *influxUser, *influxPass)
+	if err != nil {
+		return err
+	}
 
 	var wg sync.WaitGroup
 
@@ -63,7 +68,7 @@ func extract() error {
 		return err
 	}
 
-	enqueueAnalytics := func(metrics []string, parameters []analyticParameter) {
+	enqueueAnalytics := func(metrics []string, parameters []t128.AnalyticParameter) {
 		paramStr := parametersToString(parameters)
 
 		for _, metric := range metrics {
@@ -72,7 +77,7 @@ func extract() error {
 			pool.SendWork(func() {
 				defer wg.Done()
 
-				points, err := client.getAnalytic(&analyticRequest{
+				points, err := client.GetAnalytic(&t128.AnalyticRequest{
 					Metric:     metric,
 					Transform:  "sum",
 					Window:     window,
@@ -84,7 +89,7 @@ func extract() error {
 					return
 				}
 
-				if err = sendAnalytis(metric, parameters, points); err != nil {
+				if err = influxClient.Send(metric, parameters, points); err != nil {
 					stderr.Printf("Influx write for %v(%v) failed return successfully: %v\n", metric, paramStr, err.Error())
 					return
 				}
@@ -94,7 +99,7 @@ func extract() error {
 		}
 	}
 
-	config, err := client.getConfiguration()
+	config, err := client.GetConfiguration()
 	if err != nil {
 		return fmt.Errorf("Unable to retrieve 128T configuration. %v", err.Error())
 	}
@@ -108,19 +113,19 @@ func extract() error {
 
 	for _, router := range config.Authority.Routers {
 		for _, node := range router.Nodes {
-			enqueueAnalytics(nodeMetrics, []analyticParameter{
+			enqueueAnalytics(t128.NodeMetrics, []t128.AnalyticParameter{
 				{Name: "router", Value: router.Name},
 				{Name: "node", Value: node.Name},
 			})
 
 			for _, deviceInterface := range node.DeviceInterfaces {
-				enqueueAnalytics(deviceInterfaceMetrics, []analyticParameter{
+				enqueueAnalytics(t128.DeviceInterfaceMetrics, []t128.AnalyticParameter{
 					{Name: "router", Value: router.Name},
 					{Name: "device_interface", Value: strconv.Itoa(deviceInterface.ID)},
 				})
 
 				for _, networkInterface := range deviceInterface.NetworkInterfaces {
-					enqueueAnalytics(networkInterfaceMetrics, []analyticParameter{
+					enqueueAnalytics(t128.NetworkInterfaceMetrics, []t128.AnalyticParameter{
 						{Name: "router", Value: router.Name},
 						{Name: "network_interface", Value: networkInterface.Name},
 					})
@@ -129,35 +134,35 @@ func extract() error {
 		}
 
 		for _, service := range config.Authority.Services {
-			enqueueAnalytics(serviceMetrics, []analyticParameter{
+			enqueueAnalytics(t128.ServiceMetrics, []t128.AnalyticParameter{
 				{Name: "router", Value: router.Name},
 				{Name: "service", Value: service.Name},
 			})
 		}
 
 		for _, tenant := range config.Authority.Tenants {
-			enqueueAnalytics(tenantMetrics, []analyticParameter{
+			enqueueAnalytics(t128.TenantMetrics, []t128.AnalyticParameter{
 				{Name: "router", Value: router.Name},
 				{Name: "service", Value: tenant.Name},
 			})
 		}
 
 		for _, serviceClass := range config.Authority.ServiceClasses {
-			enqueueAnalytics(serviceClassMetrics, []analyticParameter{
+			enqueueAnalytics(t128.ServiceClassMetrics, []t128.AnalyticParameter{
 				{Name: "router", Value: router.Name},
 				{Name: "service_class", Value: serviceClass.Name},
 			})
 		}
 
 		for _, serviceRoute := range router.ServiceRoutes {
-			enqueueAnalytics(serviceRouteMetrics, []analyticParameter{
+			enqueueAnalytics(t128.ServiceRouteMetrics, []t128.AnalyticParameter{
 				{Name: "router", Value: router.Name},
 				{Name: "service_route", Value: serviceRoute.Name},
 			})
 		}
 
 		for serviceGroup := range serviceGroups {
-			enqueueAnalytics(serviceGroupMetrics, []analyticParameter{
+			enqueueAnalytics(t128.ServiceGroupMetrics, []t128.AnalyticParameter{
 				{Name: "router", Value: router.Name},
 				{Name: "service_group", Value: serviceGroup},
 			})

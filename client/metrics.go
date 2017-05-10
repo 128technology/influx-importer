@@ -1,6 +1,7 @@
-package main
+package client
 
-var nodeMetrics = []string{
+// NodeMetrics contains a list of metrics available for a 128T node
+var NodeMetrics = []string{
 	"bandwidth",
 	"session_count",
 	"session_arrival_rate",
@@ -10,7 +11,8 @@ var nodeMetrics = []string{
 	"tx_data",
 }
 
-var deviceInterfaceMetrics = []string{
+// DeviceInterfaceMetrics contains a list of metrics available for a 128T device interface.
+var DeviceInterfaceMetrics = []string{
 	"bandwidth",
 	"session_count",
 	"session_arrival_rate",
@@ -20,7 +22,8 @@ var deviceInterfaceMetrics = []string{
 	"tx_data",
 }
 
-var networkInterfaceMetrics = []string{
+// NetworkInterfaceMetrics contains a list of metrics available for a 128T network interface.
+var NetworkInterfaceMetrics = []string{
 	"bandwidth",
 	"session_count",
 	"session_arrival_rate",
@@ -30,7 +33,8 @@ var networkInterfaceMetrics = []string{
 	"tx_data",
 }
 
-var serviceMetrics = []string{
+// ServiceMetrics contains a list of metrics available for a 128T service.
+var ServiceMetrics = []string{
 	"bandwidth",
 	"session_count",
 	"session_arrival_rate",
@@ -40,7 +44,8 @@ var serviceMetrics = []string{
 	"tx_data",
 }
 
-var serviceRouteMetrics = []string{
+// ServiceRouteMetrics contains a list of metrics available for a 128T service route.
+var ServiceRouteMetrics = []string{
 	"bandwidth",
 	"session_count",
 	"session_arrival_rate",
@@ -50,7 +55,8 @@ var serviceRouteMetrics = []string{
 	"tx_data",
 }
 
-var serviceClassMetrics = []string{
+// ServiceClassMetrics contains a list of metrics available for a 128T service class.
+var ServiceClassMetrics = []string{
 	"bandwidth",
 	"session_count",
 	"session_arrival_rate",
@@ -60,7 +66,8 @@ var serviceClassMetrics = []string{
 	"tx_data",
 }
 
-var serviceGroupMetrics = []string{
+// ServiceGroupMetrics contains a list of metrics available for a 128T service group.
+var ServiceGroupMetrics = []string{
 	"bandwidth",
 	"session_count",
 	"session_arrival_rate",
@@ -70,7 +77,8 @@ var serviceGroupMetrics = []string{
 	"tx_data",
 }
 
-var tenantMetrics = []string{
+// TenantMetrics contains a list of metrics available for a 128T tenant.
+var TenantMetrics = []string{
 	"bandwidth",
 	"session_count",
 	"session_arrival_rate",
