@@ -1,4 +1,4 @@
-# 128T Influx Importer
+# 128T Influx Importer [![Build Status](https://travis-ci.org/128technology/influx-importer.svg?branch=master)](https://travis-ci.org/128technology/influx-importer)
 An application for importing analytics into Influx from a 128T router or conductor.
 
 ## Running

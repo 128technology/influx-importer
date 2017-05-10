@@ -1,5 +1,5 @@
 BINARY=dist/influx-importer
-PACKAGE=./cmd/influx-importer/main.go
+PACKAGE=./cmd/main.go
 BUILD=0.0.0-Development
 LDFLAGS=-ldflags "-X main.build=${BUILD}"
 
