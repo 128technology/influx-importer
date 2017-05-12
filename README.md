@@ -34,3 +34,7 @@ Successfully exported session_departure_rate(router=corp,device_interface=10).
 Successfully exported total_data(router=corp,device_interface=10).
 ...
 ```
+
+## Docker
+
+Check out the README in the `docker` folder for more information.
