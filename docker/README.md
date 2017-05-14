@@ -14,6 +14,14 @@ docker build -t 128tech/influx-importer:latest -f docker/Dockerfile .
 
 You will need a `128T REST API token` as well the `URL for the 128T` application.
 
+The token can be retrieved by running the following on any machine:
+
+```
+curl -s https://raw.githubusercontent.com/128technology/influx-importer/master/retrieve-token.sh -o /tmp/retrieve-token.sh && bash /tmp/retrieve-token.sh
+```
+
+Simply follow the prompts and out will pop JSON containing your token. The URL you use to retrieve this token (which you are prompted for) is the same that you will use in the following docker run command.
+
 After building, run:
 
 ```
