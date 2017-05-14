@@ -9,7 +9,13 @@ Running `./influx-importer --help` will display a series of help.
 
 The four manditory flags are `token`, `url`, `influx-address` and `influx-database`.
 
-The easiest way to generate a `token` can be by going to the Swagger page on the 128T instance you wish to export analytics from. For example: https://10.0.0.1/explore/. Under the "Authenticate" section choose "/login". Fill out the username and password for the body and hit "Try it out!". The response will be a token you can use as the input to the `token` flag. You can also set a `TOKEN` environmental variable and `influx-importer` will pick that up too.
+The easiest way to generate a `token` is by running the following command:
+
+```
+curl -s https://raw.githubusercontent.com/128technology/influx-importer/master/retrieve-token.sh -o /tmp/retrieve-token.sh && bash /tmp/retrieve-token.sh
+```
+
+This will prompt you for the 128T Url (e.g. https://10.0.0.1) as well as your username and password. The response will be a token you can use as the input to the `token` flag. You can also set a `TOKEN` environmental variable and `influx-importer` will pick that up too.
 
 `url` is the HTTP address of the 128T application. E.g. https://10.0.0.1
 
