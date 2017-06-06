@@ -8,4 +8,5 @@ build:
     - amd64
   ldflags: -s -w -X main.build={{.Version}}
 archive:
+  name_template: "{{.Binary}}_{{.Os}}_{{.Arch}}"
   format: tar.gz

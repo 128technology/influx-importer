@@ -17,7 +17,7 @@ RUN service grafana-server start && \
     service grafana-server stop
 
 COPY ./docker/run.sh /
-COPY ./dist/influx-importer_Linux_x86_64/influx-importer /
+COPY ./dist/influx-importer_linux_amd64/influx-importer /
 
 EXPOSE 8086 3000
 
