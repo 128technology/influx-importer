@@ -143,7 +143,7 @@ func extract() error {
 		for _, tenant := range config.Authority.Tenants {
 			enqueueAnalytics(t128.TenantMetrics, []t128.AnalyticParameter{
 				{Name: "router", Value: router.Name},
-				{Name: "service", Value: tenant.Name},
+				{Name: "tenant", Value: tenant.Name},
 			})
 		}
 
