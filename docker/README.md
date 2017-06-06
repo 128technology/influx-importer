@@ -2,6 +2,8 @@
 
 This docker container contains InfluxDB, Grafana, and the Influx-importer application.
 
+🔥 **The docker deployment is in a prototype phase. There are numerous work items to be addressed before this is production worthy.** 🔥
+
 # Building
 
 To build run the following from the project root directory!
