@@ -118,12 +118,14 @@ func extract() error {
 				for _, deviceInterface := range node.DeviceInterfaces {
 					extractAndSend(t128.DeviceInterfaceMetrics, []t128.AnalyticParameter{
 						{Name: "router", Value: router.Name},
+						{Name: "node", Value: node.Name},
 						{Name: "device_interface", Value: strconv.Itoa(deviceInterface.ID)},
 					})
 
 					for _, networkInterface := range deviceInterface.NetworkInterfaces {
 						extractAndSend(t128.NetworkInterfaceMetrics, []t128.AnalyticParameter{
 							{Name: "router", Value: router.Name},
+							{Name: "node", Value: node.Name},
 							{Name: "network_interface", Value: networkInterface.Name},
 						})
 					}
