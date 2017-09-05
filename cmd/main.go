@@ -1,15 +1,12 @@
 package main
 
 import (
-	"crypto/tls"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/abiosoft/semaphore"
 
@@ -44,16 +41,7 @@ func parametersToString(parameters []t128.AnalyticParameter) string {
 }
 
 func extract() error {
-	httpClient := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		},
-	}
-
-	client := t128.CreateClient(*url, *token, httpClient)
+	client := t128.CreateClient(*url, *token)
 	window := t128.AnalyticWindow{End: "now", Start: "now-3600"}
 
 	influxClient, err := influx.CreateClient(*influxAddress, *influxDatabase, *influxUser, *influxPass)

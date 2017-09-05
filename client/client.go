@@ -2,11 +2,13 @@ package client
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // Client represents a HTTP connection to a 128T host.
@@ -16,10 +18,22 @@ type Client struct {
 	token      string
 }
 
+// create a default HTTP client
+func createHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
+}
+
 // CreateClient creates a Client object given a baseURL, token, and httpClient.
-func CreateClient(baseURL string, token string, httpClient *http.Client) *Client {
+func CreateClient(baseURL string, token string) *Client {
 	return &Client{
-		httpClient: httpClient,
+		httpClient: createHTTPClient(),
 		baseURL:    strings.TrimSuffix(baseURL, "/"),
 		token:      token,
 	}
@@ -74,4 +88,55 @@ func (client *Client) GetConfiguration() (Configuration, error) {
 	var response Configuration
 	err := client.makeJSONRequest(url, "GET", nil, &response)
 	return response, err
+}
+
+// GetToken requests a JWT token from the server to be used in future requests
+func GetToken(baseURL string, username string, password string) (token *string, err error) {
+	requestBody := map[string]string{
+		"username": username,
+		"password": password,
+	}
+
+	body, err := json.Marshal(requestBody)
+	if err != nil {
+		return
+	}
+
+	url := fmt.Sprintf("%v/api/v1/login", baseURL)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := createHTTPClient().Do(req)
+	if err != nil {
+		return
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		err = errors.New("Invalid status code: " + resp.Status)
+		return
+	}
+
+	var responseBody struct {
+		Token *string `json:"token"`
+	}
+
+	decoder := json.NewDecoder(resp.Body)
+	err = decoder.Decode(&responseBody)
+	if err != nil {
+		return
+	}
+
+	if responseBody.Token == nil {
+		err = errors.New("Request successful but token was empty!")
+		return
+	}
+
+	token = responseBody.Token
+	return
 }
