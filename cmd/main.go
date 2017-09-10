@@ -11,7 +11,7 @@ import (
 	"github.com/abiosoft/semaphore"
 
 	t128 "github.com/128technology/influx-importer/client"
-	influx "github.com/128technology/influx-importer/influx"
+	"github.com/128technology/influx-importer/influx"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -32,15 +32,15 @@ var (
 	maxConcurrentRouters = kingpin.Flag("max-concurrent-routers", "The number of routers to query concurrently.").Short('r').Default("10").Int()
 )
 
-func parametersToString(parameters []t128.AnalyticParameter) string {
+func parametersToString(parameters t128.AnalyticMetricFilter) string {
 	var str []string
-	for _, param := range parameters {
-		str = append(str, fmt.Sprintf("%v=%v", param.Name, param.Value))
+	for key, val := range parameters {
+		str = append(str, fmt.Sprintf("%v=%v", key, val))
 	}
 	return strings.Join(str, ",")
 }
 
-func extract() error {
+func extract(metrics []t128.MetricDescriptor) error {
 	client := t128.CreateClient(*url, *token)
 	window := t128.AnalyticWindow{End: "now", Start: "now-3600"}
 
@@ -49,28 +49,42 @@ func extract() error {
 		return err
 	}
 
-	extractAndSend := func(metrics []string, parameters []t128.AnalyticParameter) {
-		paramStr := parametersToString(parameters)
+	extractAndSend := func(metrics []t128.MetricDescriptor, filter t128.AnalyticMetricFilter) {
+		paramStr := parametersToString(filter)
+
+		routerName, routerPresent := filter["router"]
+		if !routerPresent {
+			panic(fmt.Errorf("Router key not present in filter"))
+		}
+
+		newFilter := make(t128.AnalyticMetricFilter)
+		for k, v := range filter {
+			if k != "router" {
+				newFilter[k] = v
+			}
+		}
+
+		filters := []t128.AnalyticMetricFilter{newFilter}
 
 		for _, metric := range metrics {
-			points, err := client.GetAnalytic(&t128.AnalyticRequest{
-				Metric:     metric,
-				Transform:  "sum",
-				Window:     window,
-				Parameters: parameters,
+			points, err := client.GetMetric(routerName, &t128.AnalyticMetricRequest{
+				ID:        "/stats/" + metric.ID,
+				Transform: "sum",
+				Window:    window,
+				Filters:   filters,
 			})
 
 			if err != nil {
-				stderr.Printf("HTTP request for %v(%v) failed return successfully: %v\n", metric, paramStr, err.Error())
+				stderr.Printf("HTTP request for %v(%v) failed return successfully: %v\n", metric.ID, paramStr, err.Error())
 				continue
 			}
 
-			if err = influxClient.Send(metric, parameters, points); err != nil {
-				stderr.Printf("Influx write for %v(%v) failed return successfully: %v\n", metric, paramStr, err.Error())
+			if err = influxClient.Send(metric.ID, filter, points); err != nil {
+				stderr.Printf("Influx write for %v(%v) failed return successfully: %v\n", metric.ID, paramStr, err.Error())
 				continue
 			}
 
-			stdout.Printf("Successfully exported %v(%v).", metric, paramStr)
+			stdout.Printf("Successfully exported %v(%v).", metric.ID, paramStr)
 		}
 	}
 
@@ -98,60 +112,68 @@ func extract() error {
 			defer wg.Done()
 
 			for _, node := range router.Nodes {
-				extractAndSend(t128.NodeMetrics, []t128.AnalyticParameter{
-					{Name: "router", Value: router.Name},
-					{Name: "node", Value: node.Name},
+				nodeMetrics := getMetricsByType(metrics, "node")
+				extractAndSend(nodeMetrics, t128.AnalyticMetricFilter{
+					"router": router.Name,
+					"node":   node.Name,
 				})
 
 				for _, deviceInterface := range node.DeviceInterfaces {
-					extractAndSend(t128.DeviceInterfaceMetrics, []t128.AnalyticParameter{
-						{Name: "router", Value: router.Name},
-						{Name: "node", Value: node.Name},
-						{Name: "device_interface", Value: strconv.Itoa(deviceInterface.ID)},
+					deviceInterfaceMetrics := getMetricsByType(metrics, "device-interface")
+					extractAndSend(deviceInterfaceMetrics, t128.AnalyticMetricFilter{
+						"router":           router.Name,
+						"node":             node.Name,
+						"device_interface": strconv.Itoa(deviceInterface.ID),
 					})
 
 					for _, networkInterface := range deviceInterface.NetworkInterfaces {
-						extractAndSend(t128.NetworkInterfaceMetrics, []t128.AnalyticParameter{
-							{Name: "router", Value: router.Name},
-							{Name: "node", Value: node.Name},
-							{Name: "network_interface", Value: networkInterface.Name},
+						deviceInterfaceMetrics := getMetricsByType(metrics, "network-interface")
+						extractAndSend(deviceInterfaceMetrics, t128.AnalyticMetricFilter{
+							"router":            router.Name,
+							"node":              node.Name,
+							"network_interface": networkInterface.Name,
 						})
 					}
 				}
 			}
 
 			for _, service := range config.Authority.Services {
-				extractAndSend(t128.ServiceMetrics, []t128.AnalyticParameter{
-					{Name: "router", Value: router.Name},
-					{Name: "service", Value: service.Name},
+				serviceMetrics := getMetricsByType(metrics, "service")
+				extractAndSend(serviceMetrics, t128.AnalyticMetricFilter{
+					"router":  router.Name,
+					"service": service.Name,
 				})
 			}
 
 			for _, tenant := range config.Authority.Tenants {
-				extractAndSend(t128.TenantMetrics, []t128.AnalyticParameter{
-					{Name: "router", Value: router.Name},
-					{Name: "tenant", Value: tenant.Name},
+				tenantMetrics := getMetricsByType(metrics, "tenant")
+				extractAndSend(tenantMetrics, t128.AnalyticMetricFilter{
+					"router": router.Name,
+					"tenant": tenant.Name,
 				})
 			}
 
 			for _, serviceClass := range config.Authority.ServiceClasses {
-				extractAndSend(t128.ServiceClassMetrics, []t128.AnalyticParameter{
-					{Name: "router", Value: router.Name},
-					{Name: "service_class", Value: serviceClass.Name},
+				serviceClassMetrics := getMetricsByType(metrics, "service-class")
+				extractAndSend(serviceClassMetrics, t128.AnalyticMetricFilter{
+					"router":        router.Name,
+					"service_class": serviceClass.Name,
 				})
 			}
 
 			for _, serviceRoute := range router.ServiceRoutes {
-				extractAndSend(t128.ServiceRouteMetrics, []t128.AnalyticParameter{
-					{Name: "router", Value: router.Name},
-					{Name: "service_route", Value: serviceRoute.Name},
+				serviceRouteMetrics := getMetricsByType(metrics, "service-route")
+				extractAndSend(serviceRouteMetrics, t128.AnalyticMetricFilter{
+					"router":        router.Name,
+					"service_route": serviceRoute.Name,
 				})
 			}
 
 			for serviceGroup := range serviceGroups {
-				extractAndSend(t128.ServiceGroupMetrics, []t128.AnalyticParameter{
-					{Name: "router", Value: router.Name},
-					{Name: "service_group", Value: serviceGroup},
+				serviceGroupMetrics := getMetricsByType(metrics, "service-group")
+				extractAndSend(serviceGroupMetrics, t128.AnalyticMetricFilter{
+					"router":        router.Name,
+					"service_group": serviceGroup,
 				})
 			}
 		}(router)
@@ -159,6 +181,40 @@ func extract() error {
 
 	wg.Wait()
 	return nil
+}
+
+func getMetrics() ([]t128.MetricDescriptor, error) {
+	metricIDs := []string{
+		"ssc/clients",
+		"registered-services/events",
+	}
+
+	var metrics []t128.MetricDescriptor
+	for _, ID := range metricIDs {
+		descriptor := t128.FindMetricByID(ID)
+		if descriptor != nil {
+			metrics = append(metrics, *descriptor)
+		} else {
+			err := fmt.Errorf("%v is not a valid metric", ID)
+			return []t128.MetricDescriptor{}, err
+		}
+	}
+
+	return metrics, nil
+}
+
+func getMetricsByType(metrics []t128.MetricDescriptor, metricType string) []t128.MetricDescriptor {
+	var returnMetrics []t128.MetricDescriptor
+	for _, metric := range metrics {
+		for _, key := range metric.Keys {
+			if key == metricType {
+				returnMetrics = append(returnMetrics, metric)
+				break
+			}
+		}
+	}
+
+	return returnMetrics
 }
 
 func main() {
@@ -170,7 +226,16 @@ func main() {
 		os.Exit(-1)
 	}
 
-	if err := extract(); err != nil {
+	metrics, err := getMetrics()
+	if err != nil {
+		stderr.Printf("Error: %v\n", err.Error())
+		os.Exit(-1)
+	}
+	if len(metrics) == 0 {
+		stderr.Println("Error: You must have atleast one metric")
+	}
+
+	if err := extract(metrics); err != nil {
 		panic(err)
 	}
 }

@@ -35,7 +35,7 @@ func CreateClient(address string, database string, username string, password str
 }
 
 // Send flushes a series of AnalyticPoints to InfluxDB
-func (client Client) Send(metric string, parameters []t128.AnalyticParameter, points []t128.AnalyticPoint) error {
+func (client Client) Send(metric string, tags map[string]string, points []t128.AnalyticPoint) error {
 	config := influx.BatchPointsConfig{
 		Database:  client.database,
 		Precision: "ms",
@@ -53,11 +53,6 @@ func (client Client) Send(metric string, parameters []t128.AnalyticParameter, po
 		}
 
 		fields := map[string]interface{}{"value": point.Value}
-		tags := map[string]string{}
-
-		for _, param := range parameters {
-			tags[param.Name] = param.Value
-		}
 
 		pt, err := influx.NewPoint(metric, tags, fields, timestamp)
 		if err != nil {

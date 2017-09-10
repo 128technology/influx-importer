@@ -26,3 +26,14 @@ type AnalyticRequest struct {
 	Parameters []AnalyticParameter `json:"parameters"`
 	Window     AnalyticWindow      `json:"window"`
 }
+
+// AnalyticMetricFilter represents a filter map of keys and values
+type AnalyticMetricFilter map[string]string
+
+// AnalyticMetricRequest defines the request for a metric
+type AnalyticMetricRequest struct {
+	ID        string                 `json:"id"`
+	Transform string                 `json:"transform"`
+	Window    AnalyticWindow         `json:"window"`
+	Filters   []AnalyticMetricFilter `json:"filters"`
+}
