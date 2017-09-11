@@ -1,0 +1,67 @@
+{
+	"comment": "",
+	"ignore": "",
+	"package": [
+		{
+			"checksumSHA1": "Wimblj4Xm0Y+q2/6pFJllU48byE=",
+			"path": "github.com/gopherjs/gopherjs/js",
+			"revision": "b40cd48c38f9a18eb3db20d163bad78de12cf0b7",
+			"revisionTime": "2017-09-06T18:39:36Z"
+		},
+		{
+			"checksumSHA1": "3jb3O53tfYrqxzkbXANWY71A1fs=",
+			"path": "github.com/jtolds/gls",
+			"revision": "77f18212c9c7edc9bd6a33d383a7b545ce62f064",
+			"revisionTime": "2017-05-03T22:40:06Z"
+		},
+		{
+			"checksumSHA1": "dxwAD5oGbBJTtWCAmSPtYhpFQvM=",
+			"path": "github.com/smartystreets/assertions",
+			"revision": "9c0ea8acbc1d8ad689f9e6fe0c1fa5838e0cabc2",
+			"revisionTime": "2017-08-18T22:00:48Z"
+		},
+		{
+			"checksumSHA1": "Vzb+dEH/LTYbvr8RXHmt6xJHz04=",
+			"path": "github.com/smartystreets/assertions/internal/go-render/render",
+			"revision": "9c0ea8acbc1d8ad689f9e6fe0c1fa5838e0cabc2",
+			"revisionTime": "2017-08-18T22:00:48Z"
+		},
+		{
+			"checksumSHA1": "r6FauVdOTFnwYQgrKGFuWUbIAJE=",
+			"path": "github.com/smartystreets/assertions/internal/oglematchers",
+			"revision": "9c0ea8acbc1d8ad689f9e6fe0c1fa5838e0cabc2",
+			"revisionTime": "2017-08-18T22:00:48Z"
+		},
+		{
+			"checksumSHA1": "DJkKC9Fsa49QQI+HKwof4La2tec=",
+			"path": "github.com/smartystreets/assertions/should",
+			"revision": "9c0ea8acbc1d8ad689f9e6fe0c1fa5838e0cabc2",
+			"revisionTime": "2017-08-18T22:00:48Z"
+		},
+		{
+			"checksumSHA1": "9OuIQT250/8pBDOB6vDpLE59t/o=",
+			"path": "github.com/smartystreets/goconvey/convey",
+			"revision": "e5b2b7c9111590d019a696c7800593f666e1a7f4",
+			"revisionTime": "2017-08-25T22:14:26Z"
+		},
+		{
+			"checksumSHA1": "2x3M0H7g69Yul0dydYqLklCFDDA=",
+			"path": "github.com/smartystreets/goconvey/convey/gotest",
+			"revision": "e5b2b7c9111590d019a696c7800593f666e1a7f4",
+			"revisionTime": "2017-08-25T22:14:26Z"
+		},
+		{
+			"checksumSHA1": "/Vf/BK8DEzagv141VuY7P1UtI40=",
+			"path": "github.com/smartystreets/goconvey/convey/reporting",
+			"revision": "e5b2b7c9111590d019a696c7800593f666e1a7f4",
+			"revisionTime": "2017-08-25T22:14:26Z"
+		},
+		{
+			"checksumSHA1": "t75C9TDSaCQ7DLH4W7J746z9+6s=",
+			"path": "github.com/smartystreets/gunit",
+			"revision": "d235ada78c0707a08798236d7bd0ba99574c79f5",
+			"revisionTime": "2017-07-05T04:14:18Z"
+		}
+	],
+	"rootPath": "github.com/go-ini/ini"
+}

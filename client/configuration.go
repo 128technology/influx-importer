@@ -39,7 +39,15 @@ type DeviceInterface struct {
 
 // NetworkInterface represents a 128T NetworkInterface
 type NetworkInterface struct {
-	Name string `json:"name"`
+	Name        string      `json:"name"`
+	Vlan        int         `json:"vlan"`
+	Adjacencies []Adjacency `json:"adjacency"`
+}
+
+// Adjacency represents a network adjacency between routers
+type Adjacency struct {
+	Peer      string `json:"peer"`
+	IPAddress string `json:"ipAddress"`
 }
 
 // Tenant represents a 128T Tenant

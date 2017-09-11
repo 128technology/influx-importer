@@ -1,5 +1,10 @@
 package client
 
+import (
+	"fmt"
+	"strings"
+)
+
 // AnalyticPoint represents a point in time
 type AnalyticPoint struct {
 	Value float64 `json:"value"`
@@ -36,4 +41,13 @@ type AnalyticMetricRequest struct {
 	Transform string                 `json:"transform"`
 	Window    AnalyticWindow         `json:"window"`
 	Filters   []AnalyticMetricFilter `json:"filters"`
+}
+
+// ToString converts a filter map to a string for debug
+func (filter AnalyticMetricFilter) ToString() string {
+	var str []string
+	for key, val := range filter {
+		str = append(str, fmt.Sprintf("%v=%v", key, val))
+	}
+	return strings.Join(str, ",")
 }

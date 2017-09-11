@@ -1,30 +1,31 @@
 # 128T Influx Importer [![Build Status](https://travis-ci.org/128technology/influx-importer.svg?branch=master)](https://travis-ci.org/128technology/influx-importer)
 An application for importing analytics into Influx from a 128T router or conductor.
 
+## Building
+
+Simply clone the repository and run `make` in the base directory.
+
 ## Running
 
 First, download the application by going to [the releases page](https://github.com/128technology/influx-importer/releases/) and choosing the correct bundle based on your operating system and architecture.
 
 Running `./influx-importer --help` will display a series of help.
 
-The four manditory flags are `token`, `url`, `influx-address` and `influx-database`.
-
-The easiest way to generate a `token` is by running the following command:
-
-```
-curl -s https://raw.githubusercontent.com/128technology/influx-importer/master/retrieve-token.sh -o /tmp/retrieve-token.sh && bash /tmp/retrieve-token.sh
-```
-
-This will prompt you for the 128T Url (e.g. https://10.0.0.1) as well as your username and password. The response will be a token you can use as the input to the `token` flag. You can also set a `TOKEN` environmental variable and `influx-importer` will pick that up too.
-
-`url` is the HTTP address of the 128T application. E.g. https://10.0.0.1
-
-`influx-address` and `influx-database` is the HTTP address of the InfluxDB instance and the database that will be used to store the analytics, respectively. *Note: make sure you create the influx database before you run this application!*
-
-An example run would look like this:
+Create the configuration file that influx-importer will use
 
 ```bash
-$ ./influx-importer --token=ABCD --url=https://10.0.0.1 --influx-address=http://127.0.0.1:8086 --influx-database=analytics
+./influx-importer init > influx-importer.conf
+```
+
+Open influx-importer.conf and fill in the sections for "target", "influx", and "metrics".
+The configuratin file comes pre-populated with all the metrics that Devils Purse has.
+Simply find the metrics you are interested in and uncomment them.
+Remember, the more metrics you uncomment the longer it takes to poll and the more stress you place on the 128T.
+
+*Note: Make sure you create the Influx database before you run this application!*
+
+```bash
+$ ./influx-importer extract --config ./influx-importer.conf
 
 Successfully exported bandwidth(router=corp,node=t128_corp_primary).
 Successfully exported session_count(router=corp,node=t128_corp_primary).
