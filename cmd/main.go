@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/abiosoft/semaphore"
+	"github.com/howeyc/gopass"
 
 	t128 "github.com/128technology/influx-importer/client"
 	"github.com/128technology/influx-importer/config"
@@ -29,6 +32,9 @@ var (
 
 	extractCommand = app.Command("extract", "Extract metrics from a 128T instance and load them into Influx")
 	configFile     = extractCommand.Flag("config", "The configuration filename.").Required().String()
+
+	tokenCommand = app.Command("get-token", "Gets the JWT token for login.")
+	tokenURL     = tokenCommand.Arg("url", "The URL to retrieve a token for.").Required().String()
 )
 
 func extract() error {
@@ -215,12 +221,41 @@ func getMetricsByType(metrics []t128.MetricDescriptor, metricType string) []t128
 	return returnMetrics
 }
 
+func getToken() error {
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Printf("Username: ")
+	user, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Password: ")
+	pass, err := gopass.GetPasswd()
+	if err != nil {
+		return err
+	}
+
+	stdout.Println("Retriving token...")
+	token, err := t128.GetToken(*tokenURL, strings.TrimSpace(user), string(pass))
+	if err != nil {
+		return err
+	}
+
+	stdout.Printf("%v\n", *token)
+	return nil
+}
+
 func main() {
 	kingpin.Version(build)
 
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case initCommand.FullCommand():
 		config.PrintConfig(t128.Metrics)
+	case tokenCommand.FullCommand():
+		if err := getToken(); err != nil {
+			panic(err)
+		}
 	case extractCommand.FullCommand():
 		if err := extract(); err != nil {
 			panic(err)

@@ -18,11 +18,19 @@ Create the configuration file that influx-importer will use
 ```
 
 Open influx-importer.conf and fill in the sections for "target", "influx", and "metrics".
-The configuratin file comes pre-populated with all the metrics that Devils Purse has.
+
+The "target" section contains information about the 128T you want to point the influx-importer at.
+If you need to generate a token you can run the following, substituting `url` for the HTTP url of the target.
+
+```bash
+./influx-importer get-token <url>
+```
+
+The "influx" section contains settings for access to your Influx database. These should be self expanitory. *Note: Make sure you create the Influx database before you run this application!*
+
+Finally, the "metrics" section comes pre-populated with all the metrics that Devils Purse has.
 Simply find the metrics you are interested in and uncomment them.
 Remember, the more metrics you uncomment the longer it takes to poll and the more stress you place on the 128T.
-
-*Note: Make sure you create the Influx database before you run this application!*
 
 ```bash
 $ ./influx-importer extract --config ./influx-importer.conf
