@@ -1,6 +1,8 @@
 package influx
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	t128 "github.com/128technology/influx-importer/client"
@@ -63,4 +65,38 @@ func (client Client) Send(metric string, tags map[string]string, points []t128.A
 	}
 
 	return client.httpClient.Write(bp)
+}
+
+// LastRecordedTime retrieves the last time a record was added for a metric
+func (client Client) LastRecordedTime(metric string, tags map[string]string) (*time.Time, error) {
+	whereClauses := make([]string, 0, len(tags))
+
+	for k, v := range tags {
+		where := fmt.Sprintf("\"%v\" = '%v'", k, v)
+		whereClauses = append(whereClauses, where)
+	}
+
+	var whereClause string
+	if len(whereClauses) > 0 {
+		whereClause = "where " + strings.Join(whereClauses, " and ")
+	}
+
+	query := fmt.Sprintf("SELECT time, value from \"%v\" %v order by time desc limit 1", metric, whereClause)
+
+	res, err := client.httpClient.Query(influx.Query{
+		Database: client.database,
+		Command:  query,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if len(res.Results) == 0 || len(res.Results[0].Series) == 0 || len(res.Results[0].Series[0].Values) == 0 {
+		return nil, fmt.Errorf("previous recorded time does not exist for %v", metric)
+	}
+
+	row := res.Results[0].Series[0].Values[0]
+	t, err := time.Parse(time.RFC3339, row[0].(string))
+	return &t, err
 }

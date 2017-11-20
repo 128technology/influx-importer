@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/abiosoft/semaphore"
 	"github.com/howeyc/gopass"
@@ -45,10 +47,6 @@ func extract() error {
 
 	client := t128.CreateClient(cfg.Target.URL, cfg.Target.Token)
 	metrics := make([]t128.MetricDescriptor, len(cfg.Metrics))
-	window := t128.AnalyticWindow{
-		End:   "now",
-		Start: fmt.Sprintf("now-%v", cfg.Application.QueryTime),
-	}
 
 	for idx, metric := range cfg.Metrics {
 		descriptor := t128.FindMetricByID(metric)
@@ -69,6 +67,16 @@ func extract() error {
 		filters := []t128.AnalyticMetricFilter{filter}
 
 		for _, metric := range metrics {
+			window := t128.AnalyticWindow{End: "now"}
+
+			lastRecordedTime, _ := influxClient.LastRecordedTime(metric.ID, tags)
+			if lastRecordedTime == nil {
+				lastRecordedTime = &time.Time{}
+			}
+
+			endTime := math.Min(float64(cfg.Application.QueryTime), time.Since(*lastRecordedTime).Seconds())
+			window.Start = fmt.Sprintf("now-%v", int32(endTime))
+
 			points, err := client.GetMetric(routerName, &t128.AnalyticMetricRequest{
 				ID:        "/stats/" + metric.ID,
 				Transform: "sum",

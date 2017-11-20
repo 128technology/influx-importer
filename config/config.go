@@ -147,7 +147,7 @@ func PrintConfig(metrics []client.MetricDescriptor) {
 	fmt.Println("[application]")
 	fmt.Println("# The maximum number of routers to query at a given time.")
 	fmt.Println("max-concurrent-routers=10")
-	fmt.Println("# The time, in seconds, to go back and collect metrics for.")
+	fmt.Println("# The maximum time, in seconds, to go back and collect metrics for.")
 	fmt.Println("query-time=3600")
 	fmt.Println()
 	fmt.Println("[target]")
