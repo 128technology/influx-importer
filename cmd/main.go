@@ -69,13 +69,14 @@ func extract() error {
 		for _, metric := range metrics {
 			window := t128.AnalyticWindow{End: "now"}
 
-			lastRecordedTime, _ := influxClient.LastRecordedTime(metric.ID, tags)
-			if lastRecordedTime == nil {
+			lastRecordedTime, err := influxClient.LastRecordedTime(metric.ID, tags)
+			if err != nil {
+				fmt.Printf("Error requesting last recorded time for %v: %s. Defaulting to last %v seconds\n", metric.ID, err.Error(), cfg.Application.QueryTime)
 				lastRecordedTime = &time.Time{}
 			}
 
-			endTime := math.Min(float64(cfg.Application.QueryTime), time.Since(*lastRecordedTime).Seconds())
-			window.Start = fmt.Sprintf("now-%v", int32(endTime))
+			endTime := int32(math.Min(float64(cfg.Application.QueryTime), time.Since(*lastRecordedTime).Seconds()))
+			window.Start = fmt.Sprintf("now-%v", endTime)
 
 			points, err := client.GetMetric(routerName, &t128.AnalyticMetricRequest{
 				ID:        "/stats/" + metric.ID,
@@ -94,7 +95,7 @@ func extract() error {
 				continue
 			}
 
-			stdout.Printf("Successfully exported %v(%v).", metric.ID, paramStr)
+			stdout.Printf("Successfully exported last %v seconds of %v(%v).", endTime, metric.ID, paramStr)
 		}
 	}
 

@@ -50,6 +50,24 @@ Successfully exported total_data(router=corp,device_interface=10).
 ...
 ```
 
-## Docker
+## Production Tips
 
-Check out the README in the `docker` folder for more information.
+The following are tips for running in a production environment.
+
+### Run with Cron
+
+The influx-importer application is not a long running process in that it will query then exit. Because of this, it's important
+to consider setting execution of the application up using `cron`.
+
+### Use a Log Rotator
+
+The influx-importer application is verbose. When running, it's important to save the log output as it'll be crucial to debugging
+any issue between the 128T application and the Influx database. However, saving it to a file without a log rotation mechanism is not recommended.
+A productive solution is to output logs to `/var/log/influx-importer` and setup `/etc/logrotate.conf` to rotate the logs within that directory.
+
+### Influx Authentication Requirements
+
+The influx-importer requires read/write access to the influx database. Without read access you will find that the application does not
+smartly ask the 128T for the delta of a metric since the last query. Instead, the influx-importer will always ask for `config query-time` worth of data.
+This `read` requirement is because the influx-importer queries Influx for the last time a metric was retrieved and asks the 128T for data up to that point
+in time.
