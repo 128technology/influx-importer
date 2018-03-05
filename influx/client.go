@@ -78,7 +78,7 @@ func (client Client) Send(metric string, tags map[string]string, points []t128.A
 func (client Client) Insert(series string, records []Record) error {
 	config := influx.BatchPointsConfig{
 		Database:  client.database,
-		Precision: "ms",
+		Precision: "ns",
 	}
 
 	bp, err := influx.NewBatchPoints(config)

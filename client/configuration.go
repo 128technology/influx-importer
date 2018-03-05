@@ -88,14 +88,14 @@ type ServiceClass struct {
 	Name string `json:"name"`
 }
 
-// Alarm represents an alarm event object. Typically found in the audit history.
+// Alarm represents an alarm event object.
 type Alarm map[string]interface{}
 
 // AuditEvent represents an event object.
 type AuditEvent struct {
-	Type      string    `json:"type"`
-	Timestamp time.Time `json:"timestamp"`
-	Router    string    `json:"router"`
-	Node      string    `json:"node"`
-	Data      Alarm     `json:"data"`
+	Type      string                 `json:"type"`
+	Timestamp time.Time              `json:"timestamp"`
+	Router    string                 `json:"router"`
+	Node      string                 `json:"node"`
+	Data      map[string]interface{} `json:"data"`
 }

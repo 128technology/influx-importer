@@ -251,18 +251,36 @@ func getMetricsByType(metrics []t128.MetricDescriptor, metricType string) []t128
 }
 
 func (e *extractor) collectAlarmHistory(router t128.Router) error {
+	maxStartTime := time.Now().Add(-time.Duration(e.config.AlarmHistory.QueryTime) * time.Second)
+
 	lastRecordedTime, err := e.influxClient.LastRecordedTime(alarmHistorySeriesName, nil)
 	if err != nil {
-		startTime := time.Now().Add(-time.Duration(e.config.AlarmHistory.QueryTime) * time.Second)
-		stderr.Printf("Error requesting last recorded time for alarm-history (%v). Starting from %v\n", err.Error(), startTime.Format(time.RFC3339))
-		lastRecordedTime = &startTime
+		stderr.Printf("Error requesting last recorded time for alarm-history (%v). Starting from %v\n", err.Error(), maxStartTime.Format(time.RFC3339))
+		lastRecordedTime = &maxStartTime
+	} else {
+		if lastRecordedTime.Unix() < maxStartTime.Unix() {
+			lastRecordedTime = &maxStartTime
+		}
 	}
 
 	// We have to adjust the last recorded time by the smallest amount possible so that
 	// we don't keep picking up the same event at that time over and over again
 	startTime := lastRecordedTime.Add(1 * time.Second)
 	timeDelta := time.Now().Sub(startTime).Seconds()
-	events, err := e.client.GetAlarmHistory(router.Name, startTime, time.Now())
+
+	// Before we can retrieve alarm history, we need to figure out what version
+	// we're on so we can make the correct request.
+	version, err := e.client.GetNodeVersion(router.Name, router.Nodes[0].Name)
+	if err != nil {
+		return err
+	}
+
+	var events []t128.AuditEvent
+	if strings.HasPrefix(version, "3.1.") {
+		events, err = e.client.GetLegacyAlarmHistory(router.Name, startTime, time.Now())
+	} else {
+		events, err = e.client.GetAuditEvents(router.Name, []string{"ALARM"}, startTime, time.Now())
+	}
 	if err != nil {
 		return err
 	}
@@ -277,7 +295,12 @@ func (e *extractor) collectAlarmHistory(router t128.Router) error {
 
 	records := make([]influx.Record, len(events))
 	for i, event := range events {
-		timestamp := event.Timestamp
+		// IMPORTANT: records that are time & tag matches will end up replacing previous items
+		// within the influx database. This means that we need to differentiate items. To do
+		// this we could add a tag but that would most likely prove hazardous as it would significatly
+		// increase the cardinality of the index which influx doesn't like. So, we'll use the nanosecond
+		// resolution of the time to encode the index of the event.
+		timestamp := event.Timestamp.Add(time.Duration(i) * time.Nanosecond)
 
 		record := influx.Record{
 			Time:   timestamp,
@@ -290,7 +313,9 @@ func (e *extractor) collectAlarmHistory(router t128.Router) error {
 		}
 
 		for k, v := range event.Data {
-			record.Fields[k] = v
+			if v != nil {
+				record.Fields[k] = v
+			}
 		}
 
 		records[i] = record

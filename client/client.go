@@ -122,14 +122,66 @@ func (client *Client) GetAlarms(router string) ([]Alarm, error) {
 	return response, err
 }
 
-// GetAlarmHistory retrieves the historical alarms for a router
-func (client *Client) GetAlarmHistory(router string, startTime time.Time, endTime time.Time) ([]AuditEvent, error) {
+// GetLegacyAlarmHistory retrieves the historical alarms for a router.
+// This method is use on routers that are 3.1.X.
+func (client *Client) GetLegacyAlarmHistory(router string, startTime time.Time, endTime time.Time) ([]AuditEvent, error) {
 	values := make(url.Values)
 	values.Add("router", router)
 	values.Add("start", startTime.UTC().Format(time.RFC3339))
 	values.Add("end", endTime.UTC().Format(time.RFC3339))
 
 	url := fmt.Sprintf("%v/api/v1/audit/alarms?%v", client.baseURL, values.Encode())
+	var response []struct {
+		Node     string    `json:"node"`
+		Time     time.Time `json:"time"`
+		ID       string    `json:"id"`
+		Message  string    `json:"message"`
+		Category string    `json:"category"`
+		Severity string    `json:"severity"`
+		Process  string    `json:"process"`
+		Source   string    `json:"source"`
+		Event    string    `json:"event"`
+	}
+
+	err := client.makeJSONRequest(url, "GET", nil, &response)
+	if err != nil {
+		return nil, err
+	}
+
+	events := make([]AuditEvent, len(response))
+	for idx, e := range response {
+		events[idx] = AuditEvent{
+			Type:      "alarm",
+			Router:    router,
+			Node:      e.Node,
+			Timestamp: e.Time,
+			Data: map[string]interface{}{
+				"uuid":     e.ID,
+				"process":  e.Process,
+				"source":   e.Source,
+				"category": e.Category,
+				"severity": e.Severity,
+				"type":     e.Event,
+				"message":  e.Message,
+			},
+		}
+	}
+
+	return events, nil
+}
+
+// GetAuditEvents retrieves the historical audit events for a router
+func (client *Client) GetAuditEvents(router string, filter []string, startTime time.Time, endTime time.Time) ([]AuditEvent, error) {
+	values := make(url.Values)
+	values.Add("router", router)
+	values.Add("start", startTime.UTC().Format(time.RFC3339))
+	values.Add("end", endTime.UTC().Format(time.RFC3339))
+
+	for _, v := range filter {
+		values.Add("filter", v)
+	}
+
+	url := fmt.Sprintf("%v/api/v1/audit?%v", client.baseURL, values.Encode())
 	var response []AuditEvent
 	err := client.makeJSONRequest(url, "GET", nil, &response)
 	return response, err
@@ -178,7 +230,7 @@ func GetToken(baseURL string, username string, password string) (token *string, 
 	}
 
 	if responseBody.Token == nil {
-		err = errors.New("Request successful but token was empty!")
+		err = errors.New("request successful but token was empty")
 		return
 	}
 
