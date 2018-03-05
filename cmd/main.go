@@ -6,6 +6,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	t128 "github.com/128technology/influx-importer/client"
 	"github.com/128technology/influx-importer/config"
 	"github.com/128technology/influx-importer/influx"
+	"github.com/mmcloughlin/geohash"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -26,6 +28,8 @@ var (
 	stdout = log.New(os.Stdout, "", 0)
 	stderr = log.New(os.Stderr, "", 0)
 )
+
+const alarmHistorySeriesName = "alarm-history"
 
 var (
 	app = kingpin.New("influx-importer", "An application for extracting 128T metrics and loading them into Influx")
@@ -39,27 +43,42 @@ var (
 	tokenURL     = tokenCommand.Arg("url", "The URL to retrieve a token for.").Required().String()
 )
 
-func extract() error {
+type extractor struct {
+	config       *config.Config
+	client       *t128.Client
+	influxClient *influx.Client
+}
+
+func createExtractor() (*extractor, error) {
 	cfg, err := config.Load(*configFile)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	client := t128.CreateClient(cfg.Target.URL, cfg.Target.Token)
-	metrics := make([]t128.MetricDescriptor, len(cfg.Metrics))
 
-	for idx, metric := range cfg.Metrics {
+	influxClient, err := influx.CreateClient(cfg.Influx.Address, cfg.Influx.Database, cfg.Influx.Username, cfg.Influx.Password)
+	if err != nil {
+		return nil, err
+	}
+
+	return &extractor{
+		client:       client,
+		influxClient: influxClient,
+		config:       cfg,
+	}, nil
+}
+
+func (e *extractor) extract() error {
+	metrics := make([]t128.MetricDescriptor, len(e.config.Metrics.Metrics))
+
+	for idx, metric := range e.config.Metrics.Metrics {
 		descriptor := t128.FindMetricByID(metric)
 		if descriptor != nil {
 			metrics[idx] = *descriptor
 		} else {
 			return fmt.Errorf("%v is not a valid metric", metric)
 		}
-	}
-
-	influxClient, err := influx.CreateClient(cfg.Influx.Address, cfg.Influx.Database, cfg.Influx.Username, cfg.Influx.Password)
-	if err != nil {
-		return err
 	}
 
 	extractAndSend := func(routerName string, metrics []t128.MetricDescriptor, filter t128.AnalyticMetricFilter, tags map[string]string) {
@@ -69,16 +88,16 @@ func extract() error {
 		for _, metric := range metrics {
 			window := t128.AnalyticWindow{End: "now"}
 
-			lastRecordedTime, err := influxClient.LastRecordedTime(metric.ID, tags)
+			lastRecordedTime, err := e.influxClient.LastRecordedTime(metric.ID, tags)
 			if err != nil {
-				fmt.Printf("Error requesting last recorded time for %v: %s. Defaulting to last %v seconds\n", metric.ID, err.Error(), cfg.Application.QueryTime)
+				stderr.Printf("Error requesting last recorded time for %v: %s. Defaulting to last %v seconds\n", metric.ID, err.Error(), e.config.Metrics.QueryTime)
 				lastRecordedTime = &time.Time{}
 			}
 
-			endTime := int32(math.Min(float64(cfg.Application.QueryTime), time.Since(*lastRecordedTime).Seconds()))
+			endTime := int32(math.Min(float64(e.config.Metrics.QueryTime), time.Since(*lastRecordedTime).Seconds()))
 			window.Start = fmt.Sprintf("now-%v", endTime)
 
-			points, err := client.GetMetric(routerName, &t128.AnalyticMetricRequest{
+			points, err := e.client.GetMetric(routerName, &t128.AnalyticMetricRequest{
 				ID:        "/stats/" + metric.ID,
 				Transform: "sum",
 				Window:    window,
@@ -90,7 +109,7 @@ func extract() error {
 				continue
 			}
 
-			if err = influxClient.Send(metric.ID, tags, points); err != nil {
+			if err = e.influxClient.Send(metric.ID, tags, points); err != nil {
 				stderr.Printf("Influx write for %v(%v) failed return successfully: %v\n", metric.ID, paramStr, err.Error())
 				continue
 			}
@@ -99,20 +118,15 @@ func extract() error {
 		}
 	}
 
-	config, err := client.GetConfiguration()
+	config, err := e.client.GetConfiguration()
 	if err != nil {
 		panic(fmt.Errorf("Unable to retrieve 128T configuration. %v", err.Error()))
 	}
 
-	serviceGroups := map[string]string{}
-	for _, service := range config.Authority.Services {
-		if service.ServiceGroup != "" {
-			serviceGroups[service.ServiceGroup] = service.ServiceGroup
-		}
-	}
+	serviceGroups := config.Authority.ServiceGroups()
 
 	var wg sync.WaitGroup
-	sem := semaphore.New(cfg.Application.MaxConcurrentRouters)
+	sem := semaphore.New(e.config.Application.MaxConcurrentRouters)
 
 	for _, router := range config.Authority.Routers {
 		wg.Add(1)
@@ -201,13 +215,19 @@ func extract() error {
 				})
 			}
 
-			for serviceGroup := range serviceGroups {
+			for _, serviceGroup := range serviceGroups {
 				serviceGroupMetrics := getMetricsByType(metrics, "service-group")
 				serviceGroupFilter := t128.AnalyticMetricFilter{"service_group": serviceGroup}
 				extractAndSend(router.Name, serviceGroupMetrics, serviceGroupFilter, map[string]string{
 					"router":        router.Name,
 					"service_group": serviceGroup,
 				})
+			}
+
+			if e.config.AlarmHistory.Enabled {
+				if err := e.collectAlarmHistory(router); err != nil {
+					stderr.Printf("Error retriving alarm history for %v: %v\n", router.Name, err.Error())
+				}
 			}
 		}(router)
 	}
@@ -228,6 +248,73 @@ func getMetricsByType(metrics []t128.MetricDescriptor, metricType string) []t128
 	}
 
 	return returnMetrics
+}
+
+func (e *extractor) collectAlarmHistory(router t128.Router) error {
+	lastRecordedTime, err := e.influxClient.LastRecordedTime(alarmHistorySeriesName, nil)
+	if err != nil {
+		startTime := time.Now().Add(-time.Duration(e.config.AlarmHistory.QueryTime) * time.Second)
+		stderr.Printf("Error requesting last recorded time for alarm-history (%v). Starting from %v\n", err.Error(), startTime.Format(time.RFC3339))
+		lastRecordedTime = &startTime
+	}
+
+	// We have to adjust the last recorded time by the smallest amount possible so that
+	// we don't keep picking up the same event at that time over and over again
+	startTime := lastRecordedTime.Add(1 * time.Second)
+	timeDelta := time.Now().Sub(startTime).Seconds()
+	events, err := e.client.GetAlarmHistory(router.Name, startTime, time.Now())
+	if err != nil {
+		return err
+	}
+
+	var geohash string
+	if router.Location != "" {
+		geohash, err = routerLocationToGeohash(router.Location)
+		if err != nil {
+			stdout.Printf("Error translating %v to geo hash: %v", router.Location, err.Error())
+		}
+	}
+
+	records := make([]influx.Record, len(events))
+	for i, event := range events {
+		timestamp := event.Timestamp
+
+		record := influx.Record{
+			Time:   timestamp,
+			Fields: map[string]interface{}{},
+			Tags: map[string]string{
+				"router":  event.Router,
+				"node":    event.Node,
+				"geohash": geohash,
+			},
+		}
+
+		for k, v := range event.Data {
+			record.Fields[k] = v
+		}
+
+		records[i] = record
+	}
+
+	stdout.Printf("Successfully exported last %v seconds (%v items) of alarm history from %v\n", int(timeDelta), len(records), router.Name)
+
+	return e.influxClient.Insert(alarmHistorySeriesName, records)
+}
+
+func routerLocationToGeohash(location string) (string, error) {
+	ISOCoord := regexp.MustCompile(`(\+|-)\d+\.?\d*`)
+	temp := ISOCoord.FindAllString(location, 2)
+	lat, err := strconv.ParseFloat(temp[0], 64)
+	if err != nil {
+		return "", err
+	}
+
+	lon, err := strconv.ParseFloat(temp[1], 64)
+	if err != nil {
+		return "", err
+	}
+
+	return geohash.Encode(lat, lon), nil
 }
 
 func getToken() error {
@@ -266,7 +353,12 @@ func main() {
 			panic(err)
 		}
 	case extractCommand.FullCommand():
-		if err := extract(); err != nil {
+		ext, err := createExtractor()
+		if err != nil {
+			panic(err)
+		}
+
+		if err := ext.extract(); err != nil {
 			panic(err)
 		}
 	}

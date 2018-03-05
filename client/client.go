@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -111,6 +112,27 @@ func (client *Client) GetNodeVersion(router string, node string) (string, error)
 	}
 
 	return response.Version, nil
+}
+
+// GetAlarms retrieves the currently active alarms for a given router
+func (client *Client) GetAlarms(router string) ([]Alarm, error) {
+	url := fmt.Sprintf("%v/api/v1/router/%v/alarms", client.baseURL, router)
+	var response []Alarm
+	err := client.makeJSONRequest(url, "GET", nil, &response)
+	return response, err
+}
+
+// GetAlarmHistory retrieves the historical alarms for a router
+func (client *Client) GetAlarmHistory(router string, startTime time.Time, endTime time.Time) ([]AuditEvent, error) {
+	values := make(url.Values)
+	values.Add("router", router)
+	values.Add("start", startTime.UTC().Format(time.RFC3339))
+	values.Add("end", endTime.UTC().Format(time.RFC3339))
+
+	url := fmt.Sprintf("%v/api/v1/audit/alarms?%v", client.baseURL, values.Encode())
+	var response []AuditEvent
+	err := client.makeJSONRequest(url, "GET", nil, &response)
+	return response, err
 }
 
 // GetToken requests a JWT token from the server to be used in future requests

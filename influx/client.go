@@ -15,6 +15,13 @@ type Client struct {
 	database   string
 }
 
+// Record represents an influx data point
+type Record struct {
+	Tags   map[string]string
+	Fields map[string]interface{}
+	Time   time.Time
+}
+
 // CreateClient creates an InfluxDB client
 func CreateClient(address string, database string, username string, password string) (*Client, error) {
 	config := influx.HTTPConfig{
@@ -57,6 +64,30 @@ func (client Client) Send(metric string, tags map[string]string, points []t128.A
 		fields := map[string]interface{}{"value": point.Value}
 
 		pt, err := influx.NewPoint(metric, tags, fields, timestamp)
+		if err != nil {
+			return err
+		}
+
+		bp.AddPoint(pt)
+	}
+
+	return client.httpClient.Write(bp)
+}
+
+// Insert adds multiple records to a series in a batch
+func (client Client) Insert(series string, records []Record) error {
+	config := influx.BatchPointsConfig{
+		Database:  client.database,
+		Precision: "ms",
+	}
+
+	bp, err := influx.NewBatchPoints(config)
+	if err != nil {
+		return err
+	}
+
+	for _, r := range records {
+		pt, err := influx.NewPoint(series, r.Tags, r.Fields, r.Time)
 		if err != nil {
 			return err
 		}
