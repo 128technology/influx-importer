@@ -1,7 +1,12 @@
 package client
 
 import (
+	"fmt"
+	"regexp"
+	"strconv"
 	"time"
+
+	"github.com/mmcloughlin/geohash"
 )
 
 // Configuration represents the root container for the 128T configuration hierarchy
@@ -15,23 +20,6 @@ type Authority struct {
 	Services       []Service      `json:"service"`
 	Tenants        []Tenant       `json:"tenant"`
 	ServiceClasses []ServiceClass `json:"serviceClass"`
-}
-
-// ServiceGroups retrieves a unique list of service groups
-func (a Authority) ServiceGroups() []string {
-	serviceGroups := map[string]string{}
-	for _, service := range a.Services {
-		if service.ServiceGroup != "" {
-			serviceGroups[service.ServiceGroup] = service.ServiceGroup
-		}
-	}
-
-	ret := make([]string, 0, len(serviceGroups))
-	for k := range serviceGroups {
-		ret = append(ret, k)
-	}
-
-	return ret
 }
 
 // Router represents a 128T Router
@@ -98,4 +86,51 @@ type AuditEvent struct {
 	Router    string                 `json:"router"`
 	Node      string                 `json:"node"`
 	Data      map[string]interface{} `json:"data"`
+}
+
+// SystemInformation represents information about the connected 128T server.
+type SystemInformation struct {
+	Version string `json:"softwareVersion"`
+}
+
+// ServiceGroups retrieves a unique list of service groups
+func (a Authority) ServiceGroups() []string {
+	serviceGroups := map[string]string{}
+	for _, service := range a.Services {
+		if service.ServiceGroup != "" {
+			serviceGroups[service.ServiceGroup] = service.ServiceGroup
+		}
+	}
+
+	ret := make([]string, 0, len(serviceGroups))
+	for k := range serviceGroups {
+		ret = append(ret, k)
+	}
+
+	return ret
+}
+
+// LocationGeohash converts the ISO location field into a geohash
+func (a Router) LocationGeohash() (string, error) {
+	if a.Location == "" {
+		return "", nil
+	}
+
+	ISOCoord := regexp.MustCompile(`(\+|-)\d+\.?\d*`)
+	temp := ISOCoord.FindAllString(a.Location, 2)
+	if len(temp) < 2 {
+		return "", fmt.Errorf("location is in incorrect format")
+	}
+
+	lat, err := strconv.ParseFloat(temp[0], 64)
+	if err != nil {
+		return "", err
+	}
+
+	lon, err := strconv.ParseFloat(temp[1], 64)
+	if err != nil {
+		return "", err
+	}
+
+	return geohash.Encode(lat, lon), nil
 }

@@ -112,7 +112,7 @@ func (client Client) LastRecordedTime(metric string, tags map[string]string) (*t
 		whereClause = "where " + strings.Join(whereClauses, " and ")
 	}
 
-	query := fmt.Sprintf("SELECT time, value from \"%v\" %v order by time desc limit 1", metric, whereClause)
+	query := fmt.Sprintf("SELECT * from \"%v\" %v order by time desc limit 1", metric, whereClause)
 
 	res, err := client.httpClient.Query(influx.Query{
 		Database: client.database,
@@ -124,7 +124,7 @@ func (client Client) LastRecordedTime(metric string, tags map[string]string) (*t
 	}
 
 	if len(res.Results) == 0 || len(res.Results[0].Series) == 0 || len(res.Results[0].Series[0].Values) == 0 {
-		return nil, fmt.Errorf("previous recorded time does not exist for %v", metric)
+		return nil, fmt.Errorf("previous recorded time does not exist for %v %v", metric, whereClauses)
 	}
 
 	row := res.Results[0].Series[0].Values[0]

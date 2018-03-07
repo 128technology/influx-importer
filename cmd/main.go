@@ -3,10 +3,8 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"math"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,16 +16,11 @@ import (
 	t128 "github.com/128technology/influx-importer/client"
 	"github.com/128technology/influx-importer/config"
 	"github.com/128technology/influx-importer/influx"
-	"github.com/mmcloughlin/geohash"
+	"github.com/128technology/influx-importer/logger"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
 
 var build = "development"
-
-var (
-	stdout = log.New(os.Stdout, "", 0)
-	stderr = log.New(os.Stderr, "", 0)
-)
 
 const alarmHistorySeriesName = "alarm-history"
 
@@ -90,7 +83,8 @@ func (e *extractor) extract() error {
 
 			lastRecordedTime, err := e.influxClient.LastRecordedTime(metric.ID, tags)
 			if err != nil {
-				stderr.Printf("Error requesting last recorded time for %v: %s. Defaulting to last %v seconds\n", metric.ID, err.Error(), e.config.Metrics.QueryTime)
+				logger.Log.Warn("requesting last recorded time for %v: %s. Defaulting to last %v seconds\n",
+					metric.ID, err.Error(), e.config.Metrics.QueryTime)
 				lastRecordedTime = &time.Time{}
 			}
 
@@ -105,22 +99,27 @@ func (e *extractor) extract() error {
 			})
 
 			if err != nil {
-				stderr.Printf("HTTP request for %v(%v) failed return successfully: %v\n", metric.ID, paramStr, err.Error())
+				logger.Log.Error("HTTP request for %v(%v) failed: %v\n", metric.ID, paramStr, err.Error())
 				continue
 			}
 
 			if err = e.influxClient.Send(metric.ID, tags, points); err != nil {
-				stderr.Printf("Influx write for %v(%v) failed return successfully: %v\n", metric.ID, paramStr, err.Error())
+				logger.Log.Error("Influx write for %v(%v) failed: %v\n", metric.ID, paramStr, err.Error())
 				continue
 			}
 
-			stdout.Printf("Successfully exported last %v seconds of %v(%v).", endTime, metric.ID, paramStr)
+			logger.Log.Info("Exported last %v seconds of %v(%v).", endTime, metric.ID, paramStr)
 		}
+	}
+
+	systemInfo, err := e.client.GetSystemInfo()
+	if err != nil {
+		logger.Log.Fatal("Unable to retrieve system information: %v", err.Error())
 	}
 
 	config, err := e.client.GetConfiguration()
 	if err != nil {
-		panic(fmt.Errorf("Unable to retrieve 128T configuration. %v", err.Error()))
+		logger.Log.Fatal("Unable to retrieve configuration: %v", err.Error())
 	}
 
 	serviceGroups := config.Authority.ServiceGroups()
@@ -225,8 +224,8 @@ func (e *extractor) extract() error {
 			}
 
 			if e.config.AlarmHistory.Enabled {
-				if err := e.collectAlarmHistory(router); err != nil {
-					stderr.Printf("Error retriving alarm history for %v: %v\n", router.Name, err.Error())
+				if err := e.collectAlarmHistory(router, systemInfo.Version); err != nil {
+					logger.Log.Error("Failed retriving alarm history for %v: %v\n", router.Name, err.Error())
 				}
 			}
 		}(router)
@@ -250,12 +249,15 @@ func getMetricsByType(metrics []t128.MetricDescriptor, metricType string) []t128
 	return returnMetrics
 }
 
-func (e *extractor) collectAlarmHistory(router t128.Router) error {
+func (e *extractor) collectAlarmHistory(router t128.Router, routerVersion string) error {
 	maxStartTime := time.Now().Add(-time.Duration(e.config.AlarmHistory.QueryTime) * time.Second)
 
-	lastRecordedTime, err := e.influxClient.LastRecordedTime(alarmHistorySeriesName, nil)
+	lastRecordedTime, err := e.influxClient.LastRecordedTime(alarmHistorySeriesName, map[string]string{
+		"router": router.Name,
+	})
 	if err != nil {
-		stderr.Printf("Error requesting last recorded time for alarm-history (%v). Starting from %v\n", err.Error(), maxStartTime.Format(time.RFC3339))
+		logger.Log.Warn("Unable to retrieve last recorded time for alarm-history: %v. Starting from %v\n",
+			err.Error(), maxStartTime.Format(time.RFC3339))
 		lastRecordedTime = &maxStartTime
 	} else {
 		if lastRecordedTime.Unix() < maxStartTime.Unix() {
@@ -268,15 +270,8 @@ func (e *extractor) collectAlarmHistory(router t128.Router) error {
 	startTime := lastRecordedTime.Add(1 * time.Second)
 	timeDelta := time.Now().Sub(startTime).Seconds()
 
-	// Before we can retrieve alarm history, we need to figure out what version
-	// we're on so we can make the correct request.
-	version, err := e.client.GetNodeVersion(router.Name, router.Nodes[0].Name)
-	if err != nil {
-		return err
-	}
-
 	var events []t128.AuditEvent
-	if strings.HasPrefix(version, "3.1.") {
+	if strings.HasPrefix(routerVersion, "3.1.") {
 		events, err = e.client.GetLegacyAlarmHistory(router.Name, startTime, time.Now())
 	} else {
 		events, err = e.client.GetAuditEvents(router.Name, []string{"ALARM"}, startTime, time.Now())
@@ -285,12 +280,11 @@ func (e *extractor) collectAlarmHistory(router t128.Router) error {
 		return err
 	}
 
-	var geohash string
-	if router.Location != "" {
-		geohash, err = routerLocationToGeohash(router.Location)
-		if err != nil {
-			stdout.Printf("Error translating %v to geo hash: %v", router.Location, err.Error())
-		}
+	geohash, err := router.LocationGeohash()
+	if err != nil {
+		logger.Log.Warn(
+			"Failed translating router %v's location %v to geo hash: %v",
+			router.Name, router.Location, err.Error())
 	}
 
 	records := make([]influx.Record, len(events))
@@ -321,25 +315,14 @@ func (e *extractor) collectAlarmHistory(router t128.Router) error {
 		records[i] = record
 	}
 
-	stdout.Printf("Successfully exported last %v seconds (%v items) of alarm history from %v\n", int(timeDelta), len(records), router.Name)
-
-	return e.influxClient.Insert(alarmHistorySeriesName, records)
-}
-
-func routerLocationToGeohash(location string) (string, error) {
-	ISOCoord := regexp.MustCompile(`(\+|-)\d+\.?\d*`)
-	temp := ISOCoord.FindAllString(location, 2)
-	lat, err := strconv.ParseFloat(temp[0], 64)
-	if err != nil {
-		return "", err
+	recordCount := len(records)
+	logger.Log.Info("Exported last %v seconds (%v items) of alarm history from %v\n",
+		int(timeDelta), recordCount, router.Name)
+	if recordCount != 0 {
+		return e.influxClient.Insert(alarmHistorySeriesName, records)
 	}
 
-	lon, err := strconv.ParseFloat(temp[1], 64)
-	if err != nil {
-		return "", err
-	}
-
-	return geohash.Encode(lat, lon), nil
+	return nil
 }
 
 func getToken() error {
@@ -357,13 +340,13 @@ func getToken() error {
 		return err
 	}
 
-	stdout.Println("Retriving token...")
+	fmt.Println("Retriving token...")
 	token, err := t128.GetToken(*tokenURL, strings.TrimSpace(user), string(pass))
 	if err != nil {
 		return err
 	}
 
-	stdout.Printf("%v\n", *token)
+	fmt.Printf("%v\n", *token)
 	return nil
 }
 

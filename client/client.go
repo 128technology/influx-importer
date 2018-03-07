@@ -99,19 +99,12 @@ func (client *Client) GetConfiguration() (Configuration, error) {
 	return response, err
 }
 
-// GetNodeVersion retrieves the version of the given node.
-func (client *Client) GetNodeVersion(router string, node string) (string, error) {
-	url := fmt.Sprintf("%v/api/v1/router/%v/node/%v/version", client.baseURL, router, node)
-	var response struct {
-		Version string `json:"version"`
-	}
-
+// GetSystemInfo retrieves the version of the given node.
+func (client *Client) GetSystemInfo() (SystemInformation, error) {
+	url := fmt.Sprintf("%v/api/v1/system", client.baseURL)
+	var response SystemInformation
 	err := client.makeJSONRequest(url, "GET", nil, &response)
-	if err != nil {
-		return "", err
-	}
-
-	return response.Version, nil
+	return response, err
 }
 
 // GetAlarms retrieves the currently active alarms for a given router
