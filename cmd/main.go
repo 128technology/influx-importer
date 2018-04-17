@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,12 +27,10 @@ var (
 	app = kingpin.New("influx-importer", "An application for extracting 128T metrics and loading them into Influx")
 
 	initCommand = app.Command("init", "Initialize the app by outputting a settings file.")
+	initOutFile = initCommand.Flag("out", "The output configuration filename.").Required().String()
 
 	extractCommand = app.Command("extract", "Extract metrics from a 128T instance and load them into Influx")
 	configFile     = extractCommand.Flag("config", "The configuration filename.").Required().String()
-
-	tokenCommand = app.Command("get-token", "Gets the JWT token for login.")
-	tokenURL     = tokenCommand.Arg("url", "The URL to retrieve a token for.").Required().String()
 )
 
 type extractor struct {
@@ -62,67 +59,63 @@ func createExtractor() (*extractor, error) {
 	}, nil
 }
 
-func (e *extractor) extract() error {
-	metrics := make([]t128.MetricDescriptor, len(e.config.Metrics.Metrics))
+func (e *extractor) extractAndSend(routerName string, metricID string, filter t128.AnalyticMetricFilter) {
+	paramStr := filter.ToString()
 
-	for idx, metric := range e.config.Metrics.Metrics {
-		descriptor := t128.FindMetricByID(metric)
-		if descriptor != nil {
-			metrics[idx] = *descriptor
-		} else {
-			return fmt.Errorf("%v is not a valid metric", metric)
-		}
-	}
+	window := t128.AnalyticWindow{End: "now"}
 
-	extractAndSend := func(routerName string, metrics []t128.MetricDescriptor, filter t128.AnalyticMetricFilter, tags map[string]string) {
-		paramStr := filter.ToString()
-		filters := []t128.AnalyticMetricFilter{filter}
-
-		for _, metric := range metrics {
-			window := t128.AnalyticWindow{End: "now"}
-
-			lastRecordedTime, err := e.influxClient.LastRecordedTime(metric.ID, tags)
-			if err != nil {
-				logger.Log.Warn("requesting last recorded time for %v: %s. Defaulting to last %v seconds\n",
-					metric.ID, err.Error(), e.config.Metrics.QueryTime)
-				lastRecordedTime = &time.Time{}
-			}
-
-			endTime := int32(math.Min(float64(e.config.Metrics.QueryTime), time.Since(*lastRecordedTime).Seconds()))
-			window.Start = fmt.Sprintf("now-%v", endTime)
-
-			points, err := e.client.GetMetric(routerName, &t128.AnalyticMetricRequest{
-				ID:        "/stats/" + metric.ID,
-				Transform: "sum",
-				Window:    window,
-				Filters:   filters,
-			})
-
-			if err != nil {
-				logger.Log.Error("HTTP request for %v(%v) failed: %v\n", metric.ID, paramStr, err.Error())
-				continue
-			}
-
-			if err = e.influxClient.Send(metric.ID, tags, points); err != nil {
-				logger.Log.Error("Influx write for %v(%v) failed: %v\n", metric.ID, paramStr, err.Error())
-				continue
-			}
-
-			logger.Log.Info("Exported last %v seconds of %v(%v).", endTime, metric.ID, paramStr)
-		}
-	}
-
-	systemInfo, err := e.client.GetSystemInfo()
+	lastRecordedTime, err := e.influxClient.LastRecordedTime(metricID, filter)
 	if err != nil {
-		logger.Log.Fatal("Unable to retrieve system information: %v", err.Error())
+		logger.Log.Warn("requesting last recorded time for %v: %s. Defaulting to last %v seconds\n",
+			metricID, err.Error(), e.config.Metrics.QueryTime)
+		lastRecordedTime = &time.Time{}
 	}
 
+	endTime := int32(math.Min(float64(e.config.Metrics.QueryTime), time.Since(*lastRecordedTime).Seconds()))
+	window.Start = fmt.Sprintf("now-%v", endTime)
+
+	routerlessFilter := make(t128.AnalyticMetricFilter)
+	for k := range filter {
+		if k != "router" {
+			routerlessFilter[k] = filter[k]
+		}
+	}
+
+	points, err := e.client.GetMetric(routerName, &t128.AnalyticMetricRequest{
+		ID:        "/stats/" + metricID,
+		Transform: "sum",
+		Window:    window,
+		Filters:   []t128.AnalyticMetricFilter{routerlessFilter},
+	})
+
+	if err != nil {
+		logger.Log.Error("HTTP request for %v(%v) failed: %v\n", metricID, paramStr, err.Error())
+		return
+	}
+
+	if err = e.influxClient.Send(metricID, filter, points); err != nil {
+		logger.Log.Error("Influx write for %v(%v) failed: %v\n", metricID, paramStr, err.Error())
+		return
+	}
+
+	logger.Log.Info("Exported last %v seconds of %v(%v).", endTime, metricID, paramStr)
+}
+
+func (e *extractor) extract() error {
 	config, err := e.client.GetConfiguration()
 	if err != nil {
-		logger.Log.Fatal("Unable to retrieve configuration: %v", err.Error())
+		return fmt.Errorf("unable to retrieve configuration: %v", err.Error())
 	}
 
-	serviceGroups := config.Authority.ServiceGroups()
+	metricDescriptors, err := e.client.GetMetricMetadata()
+	if err != nil {
+		return fmt.Errorf("unable to retrieve metric metadata: %v", err.Error())
+	}
+
+	descriptorMap := make(map[string]*t128.MetricDescriptor)
+	for _, desc := range metricDescriptors {
+		descriptorMap[desc.ID] = desc
+	}
 
 	var wg sync.WaitGroup
 	sem := semaphore.New(e.config.Application.MaxConcurrentRouters)
@@ -135,96 +128,33 @@ func (e *extractor) extract() error {
 			defer sem.Release()
 			defer wg.Done()
 
-			for _, node := range router.Nodes {
-				nodeMetrics := getMetricsByType(metrics, "node")
-				nodeFilter := t128.AnalyticMetricFilter{"node": node.Name}
-				extractAndSend(router.Name, nodeMetrics, nodeFilter, map[string]string{
-					"router": router.Name,
-					"node":   node.Name,
-				})
-
-				for _, deviceInterface := range node.DeviceInterfaces {
-					deviceInterfaceMetrics := getMetricsByType(metrics, "device-interface")
-					deviceInterfaceFilter := t128.AnalyticMetricFilter{
-						"device_interface": fmt.Sprintf("%v.%v", node.Name, deviceInterface.ID),
-					}
-					extractAndSend(router.Name, deviceInterfaceMetrics, deviceInterfaceFilter, map[string]string{
-						"router":           router.Name,
-						"node":             node.Name,
-						"device_interface": strconv.Itoa(deviceInterface.ID),
-					})
-
-					for _, networkInterface := range deviceInterface.NetworkInterfaces {
-						networkInterfaceMetrics := getMetricsByType(metrics, "network-interface")
-						networkInterfaceFilter := t128.AnalyticMetricFilter{
-							"network_interface": fmt.Sprintf("%v.%v", node.Name, networkInterface.Name),
-						}
-						extractAndSend(router.Name, networkInterfaceMetrics, networkInterfaceFilter, map[string]string{
-							"router":            router.Name,
-							"node":              node.Name,
-							"network_interface": networkInterface.Name,
-						})
-
-						for _, adjacency := range networkInterface.Adjacencies {
-							peerPathMetrics := getMetricsByType(metrics, "peer-path")
-							peerPath := fmt.Sprintf("%v/%v/%v/%v/%v", adjacency.Peer, adjacency.IPAddress, node.Name, deviceInterface.ID, networkInterface.Vlan)
-							peerPathFilter := t128.AnalyticMetricFilter{"peer_path": peerPath}
-							extractAndSend(router.Name, peerPathMetrics, peerPathFilter, map[string]string{
-								"router":    router.Name,
-								"peer_path": peerPath,
-							})
-						}
-					}
+			for _, metricID := range e.config.Metrics.Metrics {
+				descriptor, ok := descriptorMap[metricID]
+				if !ok {
+					logger.Log.Warn("%v is not a valid metric within the system. Skipping...", metricID)
+					continue
 				}
-			}
 
-			for _, service := range config.Authority.Services {
-				serviceMetrics := getMetricsByType(metrics, "service")
-				serviceFilter := t128.AnalyticMetricFilter{"service": service.Name}
-				extractAndSend(router.Name, serviceMetrics, serviceFilter, map[string]string{
-					"router":  router.Name,
-					"service": service.Name,
-				})
-			}
+				permutations, err := e.client.GetMetricPermutations(router.Name, *descriptor)
+				if err != nil {
+					logger.Log.Error("Error retriving permutations for %v on router %v: %v\n", metricID, router.Name, err)
+				}
 
-			for _, tenant := range config.Authority.Tenants {
-				tenantMetrics := getMetricsByType(metrics, "tenant")
-				tenantFilter := t128.AnalyticMetricFilter{"tenant": tenant.Name}
-				extractAndSend(router.Name, tenantMetrics, tenantFilter, map[string]string{
-					"router": router.Name,
-					"tenant": tenant.Name,
-				})
-			}
+				for _, permutation := range permutations {
+					filter := make(t128.AnalyticMetricFilter)
+					filter["router"] = router.Name
 
-			for _, serviceClass := range config.Authority.ServiceClasses {
-				serviceClassMetrics := getMetricsByType(metrics, "service-class")
-				serviceClassFilter := t128.AnalyticMetricFilter{"service_class": serviceClass.Name}
-				extractAndSend(router.Name, serviceClassMetrics, serviceClassFilter, map[string]string{
-					"router":        router.Name,
-					"service_class": serviceClass.Name,
-				})
-			}
+					for key := range permutation.Parameters {
+						filter[key] = permutation.Parameters[key]
+					}
 
-			for _, serviceRoute := range router.ServiceRoutes {
-				serviceRouteMetrics := getMetricsByType(metrics, "service-route")
-				serviceRouteFilter := t128.AnalyticMetricFilter{"service_route": serviceRoute.Name}
-				extractAndSend(router.Name, serviceRouteMetrics, serviceRouteFilter, map[string]string{
-					"router":        router.Name,
-					"service_route": serviceRoute.Name,
-				})
-			}
+					e.extractAndSend(router.Name, descriptor.ID, filter)
+				}
 
-			for _, serviceGroup := range serviceGroups {
-				serviceGroupMetrics := getMetricsByType(metrics, "service-group")
-				serviceGroupFilter := t128.AnalyticMetricFilter{"service_group": serviceGroup}
-				extractAndSend(router.Name, serviceGroupMetrics, serviceGroupFilter, map[string]string{
-					"router":        router.Name,
-					"service_group": serviceGroup,
-				})
 			}
 
 			if e.config.AlarmHistory.Enabled {
-				if err := e.collectAlarmHistory(router, systemInfo.Version); err != nil {
+				if err := e.collectAlarmHistory(router); err != nil {
 					logger.Log.Error("Failed retriving alarm history for %v: %v\n", router.Name, err.Error())
 				}
 			}
@@ -235,21 +165,7 @@ func (e *extractor) extract() error {
 	return nil
 }
 
-func getMetricsByType(metrics []t128.MetricDescriptor, metricType string) []t128.MetricDescriptor {
-	var returnMetrics []t128.MetricDescriptor
-	for _, metric := range metrics {
-		for _, key := range metric.Keys {
-			if key == metricType {
-				returnMetrics = append(returnMetrics, metric)
-				break
-			}
-		}
-	}
-
-	return returnMetrics
-}
-
-func (e *extractor) collectAlarmHistory(router t128.Router, routerVersion string) error {
+func (e *extractor) collectAlarmHistory(router t128.Router) error {
 	maxStartTime := time.Now().Add(-time.Duration(e.config.AlarmHistory.QueryTime) * time.Second)
 
 	lastRecordedTime, err := e.influxClient.LastRecordedTime(alarmHistorySeriesName, map[string]string{
@@ -270,12 +186,7 @@ func (e *extractor) collectAlarmHistory(router t128.Router, routerVersion string
 	startTime := lastRecordedTime.Add(1 * time.Second)
 	timeDelta := time.Now().Sub(startTime).Seconds()
 
-	var events []t128.AuditEvent
-	if strings.HasPrefix(routerVersion, "3.1.") {
-		events, err = e.client.GetLegacyAlarmHistory(router.Name, startTime, time.Now())
-	} else {
-		events, err = e.client.GetAuditEvents(router.Name, []string{"ALARM"}, startTime, time.Now())
-	}
+	events, err := e.client.GetAuditEvents(router.Name, []string{"ALARM"}, startTime, time.Now())
 	if err != nil {
 		return err
 	}
@@ -325,8 +236,14 @@ func (e *extractor) collectAlarmHistory(router t128.Router, routerVersion string
 	return nil
 }
 
-func getToken() error {
+func initConfig() error {
 	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Printf("128T Hostname: ")
+	host, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
 
 	fmt.Printf("Username: ")
 	user, err := reader.ReadString('\n')
@@ -341,12 +258,28 @@ func getToken() error {
 	}
 
 	fmt.Println("Retriving token...")
-	token, err := t128.GetToken(*tokenURL, strings.TrimSpace(user), string(pass))
+	url := fmt.Sprintf("https://%v", strings.TrimSpace(host))
+	token, err := t128.GetToken(url, strings.TrimSpace(user), string(pass))
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("%v\n", *token)
+	client := t128.CreateClient(url, *token)
+	descriptors, err := client.GetMetricMetadata()
+	if err != nil {
+		return err
+	}
+
+	f, err := os.OpenFile(*initOutFile, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	config.PrintConfig(url, *token, descriptors, f)
+
+	fmt.Printf("Configuration successfully writen to \"%v\"\n", *initOutFile)
+	fmt.Printf("Additional changes are required within the configuration file before you start the application.\n")
 	return nil
 }
 
@@ -355,9 +288,7 @@ func main() {
 
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case initCommand.FullCommand():
-		config.PrintConfig(t128.Metrics)
-	case tokenCommand.FullCommand():
-		if err := getToken(); err != nil {
+		if err := initConfig(); err != nil {
 			panic(err)
 		}
 	case extractCommand.FullCommand():

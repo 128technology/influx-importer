@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/go-ini/ini"
 
@@ -190,41 +191,41 @@ func getInfluxConfig(ini *ini.File) (*InfluxConfig, error) {
 }
 
 // PrintConfig prints the given metrics to the stdout
-func PrintConfig(metrics []client.MetricDescriptor) {
-	fmt.Println("[application]")
-	fmt.Println("# The maximum number of routers to query at a given time.")
-	fmt.Println("max-concurrent-routers=10")
-	fmt.Println()
-	fmt.Println("[target]")
-	fmt.Println("# The fully qualified URL to the 128T Web Instance. E.g: https://10.0.1.29")
-	fmt.Println("url=")
-	fmt.Println("# The JWT token acquired when logging into the 128T application.")
-	fmt.Println("token=")
-	fmt.Println()
-	fmt.Println("[influx]")
-	fmt.Println("# The address of the Influx instance which is typically a HTTP address.")
-	fmt.Println("address=")
-	fmt.Println("username=")
-	fmt.Println("password=")
-	fmt.Println("database=")
-	fmt.Println()
-	fmt.Println("[alarm-history]")
-	fmt.Println("enabled=true")
-	fmt.Println("# The maximum time, in seconds, to go back and collect alarms for.")
-	fmt.Println("max-query-time=3600")
-	fmt.Println()
-	fmt.Println("[metrics]")
-	fmt.Println("# The maximum time, in seconds, to go back and collect metrics for.")
-	fmt.Println("max-query-time=3600")
-	fmt.Println()
-	fmt.Println("# All metrics are, by default, disabled.")
-	fmt.Println("# Uncomment the desired stat to begin pulling for it.")
-	fmt.Println("# Keep in mind that the more stats you enable the longer query times take")
-	fmt.Println("# and the more consistent burden you place on the 128T routers.")
-	fmt.Println()
+func PrintConfig(url string, token string, metrics []*client.MetricDescriptor, output io.Writer) {
+	fmt.Fprintln(output, "[application]")
+	fmt.Fprintln(output, "# The maximum number of routers to query at a given time.")
+	fmt.Fprintln(output, "max-concurrent-routers=10")
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "[target]")
+	fmt.Fprintln(output, "# The fully qualified URL to the 128T Web Instance. E.g: https://10.0.1.29")
+	fmt.Fprintf(output, "url=%v\n", url)
+	fmt.Fprintln(output, "# The JWT token acquired when logging into the 128T application.")
+	fmt.Fprintf(output, "token=%v\n", token)
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "[influx]")
+	fmt.Fprintln(output, "# The address of the Influx instance which is typically a HTTP address.")
+	fmt.Fprintln(output, "address=")
+	fmt.Fprintln(output, "username=")
+	fmt.Fprintln(output, "password=")
+	fmt.Fprintln(output, "database=")
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "[alarm-history]")
+	fmt.Fprintln(output, "enabled=true")
+	fmt.Fprintln(output, "# The maximum time, in seconds, to go back and collect alarms for.")
+	fmt.Fprintln(output, "max-query-time=3600")
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "[metrics]")
+	fmt.Fprintln(output, "# The maximum time, in seconds, to go back and collect metrics for.")
+	fmt.Fprintln(output, "max-query-time=3600")
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "# All metrics are, by default, disabled.")
+	fmt.Fprintln(output, "# Uncomment the desired stat to begin pulling for it.")
+	fmt.Fprintln(output, "# Keep in mind that the more stats you enable the longer query times take")
+	fmt.Fprintln(output, "# and the more consistent burden you place on the 128T routers.")
+	fmt.Fprintln(output)
 
 	for _, metric := range metrics {
-		fmt.Printf("# %v: %v\n", metric.Label, metric.Description)
-		fmt.Printf("#%v\n\n", metric.ID)
+		fmt.Fprintf(output, "# %v\n", metric.Description)
+		fmt.Fprintf(output, "#%v\n\n", metric.ID)
 	}
 }

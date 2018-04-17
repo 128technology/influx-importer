@@ -75,14 +75,6 @@ func (client *Client) makeJSONRequest(url string, method string, requestBody int
 	return
 }
 
-// GetAnalytic retrieves an array of AnalyticPoint.
-func (client *Client) GetAnalytic(request *AnalyticRequest) ([]AnalyticPoint, error) {
-	url := fmt.Sprintf("%v/api/v1/analytics/runningTransform", client.baseURL)
-	var response []AnalyticPoint
-	err := client.makeJSONRequest(url, "POST", request, &response)
-	return response, err
-}
-
 // GetMetric retrieves an array of AnalyticPoint for a given metric.
 func (client *Client) GetMetric(router string, request *AnalyticMetricRequest) ([]AnalyticPoint, error) {
 	url := fmt.Sprintf("%v/api/v1/router/%v/metrics", client.baseURL, router)
@@ -115,54 +107,6 @@ func (client *Client) GetAlarms(router string) ([]Alarm, error) {
 	return response, err
 }
 
-// GetLegacyAlarmHistory retrieves the historical alarms for a router.
-// This method is use on routers that are 3.1.X.
-func (client *Client) GetLegacyAlarmHistory(router string, startTime time.Time, endTime time.Time) ([]AuditEvent, error) {
-	values := make(url.Values)
-	values.Add("router", router)
-	values.Add("start", startTime.UTC().Format(time.RFC3339))
-	values.Add("end", endTime.UTC().Format(time.RFC3339))
-
-	url := fmt.Sprintf("%v/api/v1/audit/alarms?%v", client.baseURL, values.Encode())
-	var response []struct {
-		Node     string    `json:"node"`
-		Time     time.Time `json:"time"`
-		ID       string    `json:"id"`
-		Message  string    `json:"message"`
-		Category string    `json:"category"`
-		Severity string    `json:"severity"`
-		Process  string    `json:"process"`
-		Source   string    `json:"source"`
-		Event    string    `json:"event"`
-	}
-
-	err := client.makeJSONRequest(url, "GET", nil, &response)
-	if err != nil {
-		return nil, err
-	}
-
-	events := make([]AuditEvent, len(response))
-	for idx, e := range response {
-		events[idx] = AuditEvent{
-			Type:      "alarm",
-			Router:    router,
-			Node:      e.Node,
-			Timestamp: e.Time,
-			Data: map[string]interface{}{
-				"uuid":     e.ID,
-				"process":  e.Process,
-				"source":   e.Source,
-				"category": e.Category,
-				"severity": e.Severity,
-				"type":     e.Event,
-				"message":  e.Message,
-			},
-		}
-	}
-
-	return events, nil
-}
-
 // GetAuditEvents retrieves the historical audit events for a router
 func (client *Client) GetAuditEvents(router string, filter []string, startTime time.Time, endTime time.Time) ([]AuditEvent, error) {
 	values := make(url.Values)
@@ -180,6 +124,120 @@ func (client *Client) GetAuditEvents(router string, filter []string, startTime t
 	return response, err
 }
 
+// GetMetricMetadata asks the server for all available metric descriptors
+func (client *Client) GetMetricMetadata() ([]*MetricDescriptor, error) {
+	body := map[string]interface{}{
+		"query": `
+		{
+			metrics {
+				metadata {
+					id
+					description
+					units
+					arguments
+				}
+			}
+		}
+		`,
+	}
+
+	var response struct {
+		Data struct {
+			Metrics struct {
+				Metadata []struct {
+					ID          string   `json:"id"`
+					Description string   `json:"description"`
+					Arguments   []string `json:"arguments"`
+				} `json:"metadata"`
+			} `json:"metrics"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	var descriptors []*MetricDescriptor
+	url := fmt.Sprintf("%v/api/v1/graphql", client.baseURL)
+	err := client.makeJSONRequest(url, "GET", body, &response)
+	if err != nil {
+		return descriptors, err
+	}
+
+	if len(response.Errors) > 0 {
+		return descriptors, fmt.Errorf("%v", response.Errors[0].Message)
+	}
+
+	descriptors = make([]*MetricDescriptor, 0, len(response.Data.Metrics.Metadata))
+
+	for _, m := range response.Data.Metrics.Metadata {
+		descriptors = append(descriptors, &MetricDescriptor{
+			ID:          m.ID,
+			Description: m.Description,
+			Keys:        m.Arguments,
+		})
+	}
+
+	return descriptors, nil
+}
+
+// GetMetricPermutations retrieves, for a given metric, all the parameter permutations available.
+func (client *Client) GetMetricPermutations(router string, descriptor MetricDescriptor) ([]*MetricPermutation, error) {
+	url := fmt.Sprintf("%v/api/v1/router/%v/stats/%v", client.baseURL, router, descriptor.ID)
+	var permutations []*MetricPermutation
+
+	var response []struct {
+		ID           string `json:"id"`
+		Permutations []struct {
+			Parameters []struct {
+				Name  string `json:"name"`
+				Value string `json:"value"`
+			} `json:"parameters"`
+		} `json:"permutations"`
+	}
+
+	type parameter struct {
+		Name    string `json:"name"`
+		Itemize bool   `json:"itemize"`
+	}
+
+	params := make([]parameter, 0, len(descriptor.Keys))
+	for _, k := range descriptor.Keys {
+		if k == "router" {
+			continue
+		}
+
+		params = append(params, parameter{
+			Name:    k,
+			Itemize: true,
+		})
+	}
+
+	body := struct {
+		Parameters []parameter `json:"parameters"`
+	}{
+		Parameters: params,
+	}
+
+	err := client.makeJSONRequest(url, "POST", body, &response)
+	if err != nil {
+		return permutations, err
+	}
+
+	for _, resp := range response {
+		for _, perm := range resp.Permutations {
+			permutation := &MetricPermutation{Parameters: make(map[string]string)}
+
+			for _, param := range perm.Parameters {
+				permutation.Parameters[param.Name] = param.Value
+			}
+
+			permutations = append(permutations, permutation)
+		}
+	}
+
+	return permutations, nil
+}
+
 // GetToken requests a JWT token from the server to be used in future requests
 func GetToken(baseURL string, username string, password string) (token *string, err error) {
 	requestBody := map[string]string{
@@ -189,27 +247,26 @@ func GetToken(baseURL string, username string, password string) (token *string, 
 
 	body, err := json.Marshal(requestBody)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	url := fmt.Sprintf("%v/api/v1/login", baseURL)
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := createHTTPClient().Do(req)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		err = errors.New("Invalid status code: " + resp.Status)
-		return
+		return nil, errors.New("Invalid status code: " + resp.Status)
 	}
 
 	var responseBody struct {
@@ -219,14 +276,12 @@ func GetToken(baseURL string, username string, password string) (token *string, 
 	decoder := json.NewDecoder(resp.Body)
 	err = decoder.Decode(&responseBody)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	if responseBody.Token == nil {
-		err = errors.New("request successful but token was empty")
-		return
+		return nil, errors.New("request successful but token was empty")
 	}
 
-	token = responseBody.Token
-	return
+	return responseBody.Token, nil
 }

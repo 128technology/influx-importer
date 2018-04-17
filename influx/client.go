@@ -32,12 +32,17 @@ func CreateClient(address string, database string, username string, password str
 
 	httpClient, err := influx.NewHTTPClient(config)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failure to create Influx client. %v", err)
 	}
 
 	client := &Client{
 		httpClient: httpClient,
 		database:   database,
+	}
+
+	_, _, err = client.httpClient.Ping(5 * time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("unable to communicate with Influx instance. Are you sure it's running? %v", err)
 	}
 
 	return client, nil

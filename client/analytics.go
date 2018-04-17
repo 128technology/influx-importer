@@ -23,15 +23,6 @@ type AnalyticWindow struct {
 	Start string `json:"start"`
 }
 
-// AnalyticRequest represents a request for an analytic
-// given a metric name, the transform, any parameters and a time window.
-type AnalyticRequest struct {
-	Metric     string              `json:"metric"`
-	Transform  string              `json:"transform"`
-	Parameters []AnalyticParameter `json:"parameters"`
-	Window     AnalyticWindow      `json:"window"`
-}
-
 // AnalyticMetricFilter represents a filter map of keys and values
 type AnalyticMetricFilter map[string]string
 
