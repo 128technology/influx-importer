@@ -1,4 +1,5 @@
 # 128T Influx Importer [![Build Status](https://travis-ci.org/128technology/influx-importer.svg?branch=master)](https://travis-ci.org/128technology/influx-importer)
+
 An application for importing analytics into Influx from a 128T router or conductor.
 
 ## Building
@@ -14,17 +15,12 @@ Running `./influx-importer --help` will display a series of help.
 Create the configuration file that influx-importer will use
 
 ```bash
-./influx-importer init > influx-importer.conf
+./influx-importer init --out influx-importer.conf
 ```
 
-Open influx-importer.conf and fill in the sections for "target", "influx", and "metrics".
+You will be prompted to input information about the 128T instance you plan to run against. This information will also be used to populate the available metrics within the configuration file.
 
-The "target" section contains information about the 128T you want to point the influx-importer at.
-If you need to generate a token you can run the following, substituting `url` for the HTTP url of the target.
-
-```bash
-./influx-importer get-token <url>
-```
+Open influx-importer.conf and fill in the sections for "influx", and "metrics".
 
 The "influx" section contains settings for access to your Influx database. These should be self expanitory. *Note: Make sure you create the Influx database before you run this application!*
 

@@ -9,16 +9,6 @@ import (
 	"github.com/mmcloughlin/geohash"
 )
 
-// Configuration represents the root container for the 128T configuration hierarchy
-type Configuration struct {
-	Authority Authority `json:"authority"`
-}
-
-// Authority represents an 128T Authority
-type Authority struct {
-	Routers []Router `json:"router"`
-}
-
 // Router represents a 128T Router
 type Router struct {
 	Name     string `json:"name"`

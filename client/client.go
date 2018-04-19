@@ -83,10 +83,10 @@ func (client *Client) GetMetric(router string, request *AnalyticMetricRequest) (
 	return response, err
 }
 
-// GetConfiguration retrieves the configuration.
-func (client *Client) GetConfiguration() (Configuration, error) {
-	url := fmt.Sprintf("%v/api/v1/config/getJSON?source=running", client.baseURL)
-	var response Configuration
+// GetRouters retrieves a list of the routers
+func (client *Client) GetRouters() ([]Router, error) {
+	url := fmt.Sprintf("%v/api/v1/router", client.baseURL)
+	var response []Router
 	err := client.makeJSONRequest(url, "GET", nil, &response)
 	return response, err
 }

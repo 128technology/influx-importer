@@ -102,9 +102,9 @@ func (e *extractor) extractAndSend(routerName string, metricID string, filter t1
 }
 
 func (e *extractor) extract() error {
-	config, err := e.client.GetConfiguration()
+	routers, err := e.client.GetRouters()
 	if err != nil {
-		return fmt.Errorf("unable to retrieve configuration: %v", err.Error())
+		return fmt.Errorf("unable to retrieve routers: %v", err.Error())
 	}
 
 	metricDescriptors, err := e.client.GetMetricMetadata()
@@ -120,7 +120,7 @@ func (e *extractor) extract() error {
 	var wg sync.WaitGroup
 	sem := semaphore.New(e.config.Application.MaxConcurrentRouters)
 
-	for _, router := range config.Authority.Routers {
+	for _, router := range routers {
 		wg.Add(1)
 
 		go func(router t128.Router) {
@@ -138,6 +138,7 @@ func (e *extractor) extract() error {
 				permutations, err := e.client.GetMetricPermutations(router.Name, *descriptor)
 				if err != nil {
 					logger.Log.Error("Error retriving permutations for %v on router %v: %v\n", metricID, router.Name, err)
+					continue
 				}
 
 				for _, permutation := range permutations {
@@ -239,36 +240,47 @@ func (e *extractor) collectAlarmHistory(router t128.Router) error {
 func initConfig() error {
 	reader := bufio.NewReader(os.Stdin)
 
-	fmt.Printf("128T Hostname: ")
-	host, err := reader.ReadString('\n')
+	fmt.Printf("128T URL: ")
+	url, err := reader.ReadString('\n')
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Username: ")
+	if strings.Index(url, "://") == -1 {
+		url = "https://" + strings.TrimSpace(url)
+		fmt.Printf("Missing URL schema! Assuming input as \"%v\"\n", url)
+	} else {
+		url = strings.TrimSpace(url)
+	}
+
+	fmt.Printf("128T Username: ")
 	user, err := reader.ReadString('\n')
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Password: ")
-	pass, err := gopass.GetPasswd()
+	fmt.Printf("128T Password: ")
+	pass, err := gopass.GetPasswdMasked()
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("Retriving token...")
-	url := fmt.Sprintf("https://%v", strings.TrimSpace(host))
+	fmt.Println()
+
+	fmt.Println("Retriving 128T token...")
 	token, err := t128.GetToken(url, strings.TrimSpace(user), string(pass))
 	if err != nil {
 		return err
 	}
 
+	fmt.Println("Retriving 128T available metrics...")
 	client := t128.CreateClient(url, *token)
 	descriptors, err := client.GetMetricMetadata()
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to retrieve metric metadata (%v). Are you sure that instance is running Element?", err)
 	}
+
+	fmt.Println("Done.")
 
 	f, err := os.OpenFile(*initOutFile, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
@@ -278,6 +290,7 @@ func initConfig() error {
 
 	config.PrintConfig(url, *token, descriptors, f)
 
+	fmt.Println()
 	fmt.Printf("Configuration successfully writen to \"%v\"\n", *initOutFile)
 	fmt.Printf("Additional changes are required within the configuration file before you start the application.\n")
 	return nil
