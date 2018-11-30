@@ -28,10 +28,10 @@ type AnalyticMetricFilter map[string]string
 
 // AnalyticMetricRequest defines the request for a metric
 type AnalyticMetricRequest struct {
-	ID        string                 `json:"id"`
-	Transform string                 `json:"transform"`
-	Window    AnalyticWindow         `json:"window"`
-	Filters   []AnalyticMetricFilter `json:"filters"`
+	ID        string               `json:"id"`
+	Transform string               `json:"transform"`
+	Window    AnalyticWindow       `json:"window"`
+	Filters   AnalyticMetricFilter `json:"filters"`
 }
 
 // ToString converts a filter map to a string for debug

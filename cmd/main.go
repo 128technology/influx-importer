@@ -85,7 +85,7 @@ func (e *extractor) extractAndSend(routerName string, metricID string, filter t1
 		ID:        "/stats/" + metricID,
 		Transform: "sum",
 		Window:    window,
-		Filters:   []t128.AnalyticMetricFilter{routerlessFilter},
+		Filters:   routerlessFilter,
 	})
 
 	if err != nil {
@@ -297,7 +297,7 @@ func initConfig() error {
 }
 
 func main() {
-	kingpin.Version(build)
+	app.Version(build)
 
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case initCommand.FullCommand():
